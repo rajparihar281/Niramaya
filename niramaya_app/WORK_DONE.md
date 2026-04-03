@@ -2,7 +2,46 @@
 
 ---
 
-## [2026-04-04] SCHEMA MIGRATION — Dispatch Engine + Flutter Error Handling
+## [2026-04-04] REGIONAL GRID VIEW — SOS Dispatch UX
+
+### SYSTEM_STATE
+- Hospital Nodes: 7 Gwalior landmarks cycling in dispatch UI
+- Dispatch UX: Animated hospital scanner replaces static spinner
+- Fallback: `no_drivers_available` → "Broadcast to Private Ambulances" button
+
+### COMPLETED_TASKS
+- [X] `dispatch_provider.dart` — Added `scanningHospital` + `noDriversAvailable` to `DispatchState`. `DispatchNotifier` starts a `Timer.periodic(1.2s)` cycling through 7 Gwalior hospital names during the backend call, updating `scanningHospital` state each tick. Timer cancelled on response.
+- [X] `sos_trigger_screen.dart` — New `_DispatchingView` widget: `AnimatedSwitcher` with fade+slide transition shows `"Checking availability at <hospital>"` cycling live. New `_NoDriverView`: warning icon, explanation text, `BROADCAST TO PRIVATE AMBULANCES` button (retries dispatch), Cancel button. Phase state machine extended: `fuse | dispatching | success | no_drivers | error`.
+
+### FILES CHANGED
+- `lib/providers/dispatch_provider.dart`
+- `lib/screens/sos_trigger_screen.dart`
+
+---
+
+### SYSTEM_STATE
+- `handleDispatch`: Fully aligned to unified `drivers` table — no references to deleted tables
+- `handleStatus`: Fixed — removed JOIN on deleted `ambulances` table
+- `autoMigrate`: Adds `dispatches.driver_id` column idempotently on startup
+- Port: `0.0.0.0:10000` — confirmed
+
+### COMPLETED_TASKS
+- [X] `handleDispatch` — JOIN `hospitals h` → `drivers d ON d.hospital_id = h.id`. Filters: `is_on_duty=true`, `is_verified=true`, `is_active=true` (both tables). Returns `200 {status: no_drivers_available}` when no match. Marks assigned driver `is_on_duty=false`. Inserts dispatch with `driver_id`.
+- [X] `handleStatus` — Removed dead JOIN on `ambulances` (deleted). Now queries `dispatches LEFT JOIN hospitals` for `status` + `hospital name`.
+- [X] `autoMigrate` — Added `ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS driver_id UUID REFERENCES drivers(id)` so dispatch records are fully traceable to the assigned driver.
+
+### DELETED TABLE REFERENCES REMOVED
+| Old reference | Replaced with |
+|---|---|
+| `JOIN ambulances a ON d.ambulance_id = a.id` | `LEFT JOIN hospitals h ON d.hospital_id = h.id` |
+| `JOIN departments d ON h.id = d.hospital_id` | removed (no departments table) |
+| `a.status = 'available'` | `d.is_on_duty = true` |
+| `UPDATE ambulances SET status = 'busy'` | `UPDATE drivers SET is_on_duty = false` |
+
+### FILES CHANGED
+- `niramaya-backend/niramaya-logistics/main.go`
+
+---
 
 ### SYSTEM_STATE
 - Backend: `handleDispatch` now targets `public.drivers` (unified schema)

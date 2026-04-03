@@ -128,18 +128,20 @@ func corsMiddleware(next http.Handler) http.Handler {
 func handleDispatch(w http.ResponseWriter, r *http.Request) {
 	var req DispatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("❌ [dispatch] JSON decode error: %v", err)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON body"})
 		return
 	}
+
+	log.Printf("📡 [dispatch] Received → patient_id=%q lat=%.6f lng=%.6f dept=%q",
+		req.PatientID, req.Latitude, req.Longitude, req.RequiredDept)
 
 	if req.RequiredDept == "" {
 		req.RequiredDept = "emergency"
 	}
 	hashedPatientID := security.HashPatientID(req.PatientID)
+	log.Printf("🔐 [dispatch] patient_id_sha=%s", hashedPatientID)
 
-	// ── Find nearest hospital that has a verified, on-duty driver ─────────────
-	// Joins hospitals → drivers (unified schema: is_on_duty, is_verified).
-	// Falls back gracefully if no driver is available.
 	var hID, hName, driverID string
 	var hLat, hLng, dist float64
 
@@ -164,59 +166,63 @@ func handleDispatch(w http.ResponseWriter, r *http.Request) {
 		ORDER BY dist ASC
 		LIMIT 1`
 
+	log.Printf("🔍 [dispatch] Querying nearest hospital (lng=%.6f lat=%.6f)", req.Longitude, req.Latitude)
+
 	err := dbPool.QueryRow(context.Background(), query, req.Longitude, req.Latitude).
 		Scan(&hID, &hName, &driverID, &dist, &hLat, &hLng)
 
 	if err != nil {
-		// No driver available — return 200 with status so the app can handle gracefully
-		log.Printf("⚠ No on-duty drivers found for dispatch request (lat=%.4f lng=%.4f): %v",
-			req.Latitude, req.Longitude, err)
+		log.Printf("⚠ [dispatch] No on-duty driver found — query error: %v", err)
 		writeJSON(w, http.StatusOK, map[string]string{"status": "no_drivers_available"})
 		return
 	}
+
+	log.Printf("✅ [dispatch] Matched hospital=%q (id=%s) driver=%s dist=%.0fm",
+		hName, hID, driverID, dist)
 
 	etaMinutes := haversineETA(req.Latitude, req.Longitude, hLat, hLng, 40.0)
 
 	ctx := context.Background()
 	tx, err := dbPool.Begin(ctx)
 	if err != nil {
-		log.Printf("❌ Failed to begin transaction: %v", err)
+		log.Printf("❌ [dispatch] Begin transaction failed: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 		return
 	}
 	defer tx.Rollback(ctx)
 
-	// Mark driver as busy
 	if _, err := tx.Exec(ctx,
 		"UPDATE drivers SET is_on_duty = false WHERE id = $1", driverID); err != nil {
-		log.Printf("❌ Failed to update driver status: %v", err)
+		log.Printf("❌ [dispatch] Update driver is_on_duty failed: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 		return
 	}
+	log.Printf("🚑 [dispatch] Driver %s marked is_on_duty=false", driverID)
 
-	// Create dispatch record — includes driver_id for full assignment traceability
 	var dID string
 	if err := tx.QueryRow(ctx,
 		`INSERT INTO dispatches (patient_id, hospital_id, driver_id, status)
 		 VALUES ($1, $2, $3, 'assigned') RETURNING id`,
 		hashedPatientID, hID, driverID).Scan(&dID); err != nil {
-		log.Printf("❌ Failed to insert dispatch: %v", err)
+		log.Printf("❌ [dispatch] Insert dispatch failed: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 		return
 	}
+	log.Printf("📝 [dispatch] Dispatch record created id=%s", dID)
 
 	if err := tx.Commit(ctx); err != nil {
-		log.Printf("❌ Transaction commit failed: %v", err)
+		log.Printf("❌ [dispatch] Commit failed: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 		return
 	}
+	log.Printf("✅ [dispatch] Transaction committed")
 
 	guardianCount, guardianErr := dispatchGuardianAlerts(ctx, req.PatientID, dID, req.Latitude, req.Longitude)
 	if guardianErr != nil {
-		log.Printf("⚠ Guardian alert fanout failed for dispatch %s: %v", dID, guardianErr)
+		log.Printf("⚠ [dispatch] Guardian alert fanout failed: %v", guardianErr)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	response := map[string]interface{}{
 		"status":                  "assigned",
 		"dispatch_id":             dID,
 		"hospital":                hName,
@@ -224,7 +230,9 @@ func handleDispatch(w http.ResponseWriter, r *http.Request) {
 		"eta_minutes":             math.Round(etaMinutes),
 		"patient_id_sha":          hashedPatientID,
 		"guardian_alerts_emitted": guardianCount,
-	})
+	}
+	log.Printf("📤 [dispatch] Response → %+v", response)
+	writeJSON(w, http.StatusOK, response)
 }
 
 func dispatchGuardianAlerts(ctx context.Context, patientAbha string, dispatchID string, lat float64, lng float64) (int, error) {
