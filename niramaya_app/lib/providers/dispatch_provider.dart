@@ -51,7 +51,27 @@ class DispatchNotifier extends StateNotifier<DispatchState> {
         longitude: longitude,
       );
 
-      final dispatch = DispatchModel.fromJson(response.data);
+      // Surface HTTP errors as readable messages
+      if (response.statusCode != null && response.statusCode! >= 400) {
+        final msg = response.data is Map
+            ? (response.data['error'] ?? 'Server error ${response.statusCode}')
+            : 'Server error ${response.statusCode}';
+        state = state.copyWith(isLoading: false, error: msg.toString());
+        return false;
+      }
+
+      final data = response.data as Map<String, dynamic>;
+
+      // Backend returns 200 with status=no_drivers_available when no driver is on duty
+      if (data['status'] == 'no_drivers_available') {
+        state = state.copyWith(
+          isLoading: false,
+          error: 'No drivers available right now. Please try again shortly.',
+        );
+        return false;
+      }
+
+      final dispatch = DispatchModel.fromJson(data);
       state = DispatchState(dispatch: dispatch);
       return true;
     } catch (e) {

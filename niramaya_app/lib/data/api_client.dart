@@ -13,6 +13,8 @@ class ApiClient {
       'Content-Type': 'application/json',
       'ngrok-skip-browser-warning': 'true',
     },
+    // Do not throw on 4xx/5xx — let callers inspect the response
+    validateStatus: (status) => status != null && status < 600,
   ))
     ..interceptors.add(
       InterceptorsWrapper(

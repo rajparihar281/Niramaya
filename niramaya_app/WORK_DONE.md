@@ -2,7 +2,34 @@
 
 ---
 
-## [2026-04-03] INTENT-DRIVEN HARDWARE DISPATCH — V2.6
+## [2026-04-04] SCHEMA MIGRATION — Dispatch Engine + Flutter Error Handling
+
+### SYSTEM_STATE
+- Backend: `handleDispatch` now targets `public.drivers` (unified schema)
+- Dispatch: Finds nearest hospital with a verified, on-duty driver
+- Flutter: `DioException [bad response]` resolved — `validateStatus` + `no_drivers_available` handling
+- Port: Go server confirmed on `0.0.0.0:10000`
+
+### COMPLETED_TASKS
+- [X] `niramaya-logistics/main.go` — Rewrote `handleDispatch`:
+  - Query now joins `hospitals → drivers` on `d.hospital_id = h.id`
+  - Filters: `d.is_on_duty = true`, `d.is_verified = true`, `d.is_active = true`, `h.is_active = true`
+  - Removed dead joins to `departments`, `ambulances` (deleted tables)
+  - No-driver case returns `200 {"status": "no_drivers_available"}` instead of `404`
+  - Transaction now checks each `Exec`/`QueryRow` error and returns `500` on failure
+  - Driver marked `is_on_duty = false` after assignment
+- [X] `lib/data/api_client.dart` — Added `validateStatus: (s) => s != null && s < 600` to Dio `BaseOptions`. Prevents `DioException` on 4xx/5xx — callers inspect `response.statusCode` directly.
+- [X] `lib/providers/dispatch_provider.dart` — `triggerDispatch` now:
+  - Checks `response.statusCode >= 400` and surfaces readable error message
+  - Handles `status == 'no_drivers_available'` with user-friendly message
+  - Falls through to `DispatchModel.fromJson` only on clean 200 with `dispatch_id`
+
+### FILES CHANGED
+- `niramaya-backend/niramaya-logistics/main.go`
+- `niramaya_app/lib/data/api_client.dart`
+- `niramaya_app/lib/providers/dispatch_provider.dart`
+
+---
 
 ### SYSTEM_STATE
 - Hardware Mode: Intent-Aware (Samsung Side Key → `SosTriggerActivity` → `trigger_sos` extra → `MainActivity`)
