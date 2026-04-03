@@ -2,7 +2,8 @@ import os
 import sys
 import json
 import pickle
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -233,8 +234,8 @@ def retrain():
 
         df = process_supabase_data()
         source = "supabase"
-        if df.empty or len(df) < 50:
-            df = generate_synthetic_department_data(2000)
+        if df.empty or len(df) < 5000:
+            df = generate_synthetic_department_data(5000)
             source = "synthetic"
 
         best_name, best_model, results = train_and_compare(df)
@@ -281,6 +282,68 @@ def health():
         "metrics": model_metadata.get("metrics", {}),
         "onnx_available": model_metadata.get("onnx_export") == "success",
     }
+
+@app.get("/gov/symptom-trends")
+def symptom_trends(days: int = 14, district: str = None):
+    from db import fetch_symptom_logs_with_dates
+    df = fetch_symptom_logs_with_dates(days, district)
+    if df.empty:
+        return {"status": "success", "days_analyzed": days, "trends": []}
+    
+    df['created_at'] = pd.to_datetime(df['created_at'])
+    df['date'] = df['created_at'].dt.date.astype(str)
+    
+    agg = df.groupby(['date', 'district', 'symptom_type'])['occurrence_count'].sum().reset_index()
+    agg.columns = ['date', 'district', 'symptom_type', 'count']
+    
+    return {
+        "status": "success",
+        "days_analyzed": days,
+        "trends": agg.to_dict(orient='records')
+    }
+
+@app.get("/gov/pharma-trends")
+def pharma_trends(days: int = 14):
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    res = supabase.table("pharmacy_sales").select("medicine_name, created_at, is_verified") \
+        .eq("is_verified", True).gte("created_at", cutoff).limit(50000).execute()
+    df = pd.DataFrame(res.data)
+    
+    if df.empty:
+        return {"status": "success", "days_analyzed": days, "trends": []}
+    
+    df['created_at'] = pd.to_datetime(df['created_at'])
+    df['date'] = df['created_at'].dt.date.astype(str)
+    
+    agg = df.groupby(['date', 'medicine_name']).size().reset_index(name='count')
+    
+    return {
+        "status": "success",
+        "days_analyzed": days,
+        "trends": agg.to_dict(orient='records')
+    }
+
+@app.get("/gov/bed-status")
+def bed_status():
+    from db import fetch_departments
+    df = fetch_departments()
+    
+    if df.empty:
+        return {"status": "success", "departments": []}
+    
+    records = []
+    for _, row in df.iterrows():
+        tb = row.get('total_beds', 0)
+        ab = row.get('available_beds', 0)
+        records.append({
+            "hospital_id": row.get('hospital_id', 'unknown'),
+            "department_type": row.get('type', 'unknown'),
+            "total_beds": tb,
+            "available_beds": ab,
+            "utilization": round((tb - ab) / tb, 2) if tb > 0 else 0
+        })
+    
+    return {"status": "success", "departments": records}
 
 if __name__ == "__main__":
     import uvicorn

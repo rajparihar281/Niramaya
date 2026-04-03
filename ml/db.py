@@ -2,6 +2,7 @@ import os
 from dotenv import load_dotenv
 from supabase import create_client, Client
 import pandas as pd
+from datetime import datetime, timedelta, timezone
 
 load_dotenv()
 
@@ -49,4 +50,16 @@ def fetch_pharmacy_sales(limit: int = 10000) -> pd.DataFrame:
         return pd.DataFrame(response.data)
     except Exception as e:
         print(f"Error fetching pharmacy_sales: {e}")
+        return pd.DataFrame()
+
+def fetch_symptom_logs_with_dates(days: int = 14, district: str = None) -> pd.DataFrame:
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        query = supabase.table("symptom_logs").select("*").gte("created_at", cutoff)
+        if district:
+            query = query.eq("district", district)
+        response = query.limit(50000).execute()
+        return pd.DataFrame(response.data)
+    except Exception as e:
+        print(f"Error fetching symptom_logs_with_dates: {e}")
         return pd.DataFrame()
