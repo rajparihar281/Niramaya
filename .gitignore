@@ -1,0 +1,19 @@
+# Environment Variables
+.env
+
+# Dependencies
+.venv/
+env/
+venv/
+__pycache__/
+*.pyc
+
+# ML Models / Weights (Optional: Remove if you want models pushed)
+# *.pkl
+# *.onnx
+
+# IDEs
+.vscode/
+
+# Logs
+*.log
