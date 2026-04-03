@@ -1,10 +1,10 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Stethoscope, Activity, Users, AlertCircle, Radio, Wifi } from 'lucide-react';
+import { Stethoscope, Activity, Users, AlertCircle, Siren, Wifi } from 'lucide-react';
 import PatientView from './components/PatientView';
 import DoctorView from './components/DoctorView';
 import StaffView from './components/StaffView';
-import EpidemicRadar from './components/EpidemicRadar';
+import GovDashboard from './components/EpidemicRadar';
 import ConnectionStatus from './components/ConnectionStatus';
 
 const Navbar = () => {
@@ -13,7 +13,7 @@ const Navbar = () => {
     { path: '/', label: 'Patient Booking', icon: Stethoscope },
     { path: '/staff', label: 'Staff / Reception', icon: Users },
     { path: '/doctor', label: 'Doctor Dashboard', icon: AlertCircle },
-    { path: '/epidemic', label: 'Epidemic Radar', icon: Radio },
+    { path: '/epidemic', label: 'Surveillance', icon: Siren },
     { path: '/status', label: 'Status', icon: Wifi },
   ];
 
@@ -44,7 +44,7 @@ const App = () => {
             <Route path="/" element={<PatientView />} />
             <Route path="/staff" element={<StaffView />} />
             <Route path="/doctor" element={<DoctorView />} />
-            <Route path="/epidemic" element={<EpidemicRadar />} />
+            <Route path="/epidemic" element={<GovDashboard />} />
             <Route path="/status" element={<ConnectionStatus />} />
           </Routes>
         </main>
