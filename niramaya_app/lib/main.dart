@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme.dart';
 import 'data/supabase_client.dart';
@@ -11,25 +12,55 @@ import 'screens/consent_screen.dart';
 import 'screens/dispatch_tracking_screen.dart';
 import 'screens/sos_trigger_screen.dart';
 
+const _sosChannel = MethodChannel('com.niramaya.app/sos_intent');
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Initialize Supabase
   await SupabaseClientHelper.initialize();
 
-  runApp(const ProviderScope(child: NiramayaApp()));
+  // Cold-start: check if launched via hardware SOS key
+  bool hardwareSosTrigger = false;
+  try {
+    hardwareSosTrigger =
+        await _sosChannel.invokeMethod<bool>('getHardwareFlag') ?? false;
+  } catch (_) {}
+
+  runApp(ProviderScope(
+    child: NiramayaApp(hardwareSosTrigger: hardwareSosTrigger),
+  ));
 }
 
-class NiramayaApp extends StatelessWidget {
-  const NiramayaApp({super.key});
+class NiramayaApp extends StatefulWidget {
+  final bool hardwareSosTrigger;
+  const NiramayaApp({super.key, required this.hardwareSosTrigger});
+
+  @override
+  State<NiramayaApp> createState() => _NiramayaAppState();
+}
+
+class _NiramayaAppState extends State<NiramayaApp> {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
+  @override
+  void initState() {
+    super.initState();
+    // Hot-launch: app already running, side key fires onNewIntent
+    _sosChannel.setMethodCallHandler((call) async {
+      if (call.method == 'triggerSos') {
+        _navigatorKey.currentState
+            ?.pushNamedAndRemoveUntil('/sos-trigger', (r) => r.isFirst);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: 'Niramaya',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      initialRoute: '/',
+      initialRoute: widget.hardwareSosTrigger ? '/sos-trigger' : '/',
       routes: {
         '/': (context) => const SplashScreen(),
         '/login': (context) => const LoginScreen(),

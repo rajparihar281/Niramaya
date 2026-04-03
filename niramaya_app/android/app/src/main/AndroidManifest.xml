@@ -47,15 +47,11 @@
         <activity
             android:name=".SosTriggerActivity"
             android:label="Niramaya (SOS)"
-            android:theme="@style/TransparentTheme"
+            android:theme="@style/LaunchTheme"
             android:launchMode="singleTask"
             android:excludeFromRecents="true"
             android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
-            </intent-filter>
-            <!-- Custom intent filter for side key if supported by intent actions -->
+            <!-- Hardware side key custom action -->
             <intent-filter>
                 <action android:name="com.niramaya.app.niramaya_app.ACTION_SOS_TRIGGER" />
                 <category android:name="android.intent.category.DEFAULT" />
