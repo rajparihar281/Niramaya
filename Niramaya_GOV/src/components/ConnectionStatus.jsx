@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Wifi, WifiOff, CheckCircle2, XCircle, RefreshCw, Clock } from 'lucide-react';
+import { Wifi, WifiOff, CheckCircle2, XCircle, RefreshCw, Clock, Cpu, Database } from 'lucide-react';
 import { api } from '../api';
 
 const ENDPOINTS = [
@@ -15,6 +15,8 @@ const ConnectionStatus = () => {
   const [results, setResults] = useState({});
   const [testing, setTesting] = useState(false);
   const [lastChecked, setLastChecked] = useState(null);
+  const [retrainResult, setRetrainResult] = useState(null);
+  const [retrainLoading, setRetrainLoading] = useState(false);
 
   const runTests = useCallback(async () => {
     setTesting(true);
@@ -42,6 +44,19 @@ const ConnectionStatus = () => {
     setLastChecked(new Date());
     setTesting(false);
   }, []);
+
+  const handleRetrain = async () => {
+    setRetrainLoading(true);
+    setRetrainResult(null);
+    try {
+      const data = await api.retrain();
+      setRetrainResult(data);
+      runTests(); // Refresh health after retrain
+    } catch (err) {
+      setRetrainResult({ status: 'error', message: err.message });
+    }
+    setRetrainLoading(false);
+  };
 
   useEffect(() => {
     runTests();
@@ -121,16 +136,19 @@ const ConnectionStatus = () => {
         })}
       </div>
 
-      {/* Model Details (from health endpoint) */}
+      {/* ML Model Status (from health endpoint) */}
       {healthData && (
-        <div className="glass-panel">
+        <div className="glass-panel" style={{ borderLeft: '4px solid var(--accent-secondary)' }}>
           <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            Model Details
+            <Cpu size={20} color="var(--accent-secondary)" /> ML Model Status
           </h3>
           <div className="flex gap-4" style={{ flexWrap: 'wrap' }}>
             <div className="stat-card">
               <div className="stat-label">Status</div>
-              <div style={{ color: 'var(--accent-success)', fontWeight: 600 }}>{healthData.status}</div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={18} color="var(--accent-success)" />
+                <span style={{ color: 'var(--accent-success)', fontWeight: 600 }}>{healthData.status}</span>
+              </div>
             </div>
             <div className="stat-card">
               <div className="stat-label">Version</div>
@@ -150,13 +168,34 @@ const ConnectionStatus = () => {
             )}
             {healthData.metrics?.r2 && (
               <div className="stat-card">
-                <div className="stat-label">R²</div>
+                <div className="stat-label">R² Score</div>
                 <div style={{ fontWeight: 600 }}>{healthData.metrics.r2.toFixed(3)}</div>
               </div>
             )}
             <div className="stat-card">
               <div className="stat-label">ONNX</div>
-              <div>{healthData.onnx_available ? '✅' : '—'}</div>
+              <div>{healthData.onnx_available ? '✅ Ready' : '—'}</div>
+            </div>
+          </div>
+          
+          {/* Retrain Button */}
+          <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--glass-border)', paddingTop: '1rem' }}>
+            <div className="flex items-center gap-4">
+              <button className="btn btn-primary" onClick={handleRetrain} disabled={retrainLoading}
+                style={{ padding: '0.6rem 1.2rem', fontSize: '0.9rem' }}>
+                <Database size={16} /> {retrainLoading ? 'Retraining...' : 'Retrain Model'}
+              </button>
+              {retrainResult && (
+                <div className="animate-fade-in" style={{ fontSize: '0.85rem' }}>
+                  {retrainResult.status === 'completed' ? (
+                    <span style={{ color: 'var(--accent-success)' }}>
+                      ✅ Retrained ({retrainResult.model}) — MAE: {retrainResult.new_mae?.toFixed(2)} | Source: {retrainResult.data_source} | {retrainResult.training_records} records
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--accent-danger)' }}>❌ {retrainResult.message || 'Retrain failed'}</span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
