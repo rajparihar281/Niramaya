@@ -253,7 +253,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen>
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
                 child: DropdownButtonFormField<String>(
-                  value: _selectedBloodGroup,
+                  initialValue: _selectedBloodGroup,
                   dropdownColor: AppColors.cardElevated,
                   style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
                   decoration: InputDecoration(
@@ -279,7 +279,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen>
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: DropdownButtonFormField<String>(
-                  value: _selectedHospitalId,
+                  initialValue: _selectedHospitalId,
                   dropdownColor: AppColors.cardElevated,
                   style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
                   decoration: InputDecoration(

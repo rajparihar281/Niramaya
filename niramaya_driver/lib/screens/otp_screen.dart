@@ -68,8 +68,12 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
   void dispose() {
     _shakeController.dispose();
     _glowController.dispose();
-    for (var c in _controllers) c.dispose();
-    for (var f in _focusNodes) f.dispose();
+    for (var c in _controllers) {
+      c.dispose();
+    }
+    for (var f in _focusNodes) {
+      f.dispose();
+    }
     super.dispose();
   }
 
@@ -107,7 +111,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
         _hasError = true;
       });
       _shakeController.forward(from: 0);
-      for (var c in _controllers) c.clear();
+      for (var c in _controllers) {
+        c.clear();
+      }
       _focusNodes[0].requestFocus();
     }
   }

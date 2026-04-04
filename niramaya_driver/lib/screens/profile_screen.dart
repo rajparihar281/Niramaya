@@ -326,7 +326,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   ),
                   const SizedBox(height: 14),
                   DropdownButtonFormField<String>(
-                    value: _editedBloodGroup,
+                    initialValue: _editedBloodGroup,
                     dropdownColor: AppColors.cardElevated,
                     style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
                     decoration: const InputDecoration(

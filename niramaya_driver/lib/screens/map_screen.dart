@@ -31,10 +31,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   Timer? _osrmTimer;
 
   List<LatLng> _routePoints = [];
+  List<LatLng> _alternateRoute = [];
   double _routeDistKm = 0;
   int _routeEtaMin = 0;
   double _distToPatientM = double.infinity;
   bool _osrmLoading = false;
+  bool _showAlternateRoute = false;
+  String _routeType = 'fastest'; // 'fastest', 'shortest', 'avoid_tolls'
 
   DispatchStatus? _lastStatus;
 
@@ -63,7 +66,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     _updateMetricsBaseline();
 
     // Then fetch OSRM route
-    await _fetchRoute();
+    await _fetchRoute(doAutoPan: true);
     _announcePhase();
 
     _positionSub = LocationService.instance.startPositionStream().listen((pos) {
@@ -113,7 +116,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     setState(() => _distToPatientM = d);
   }
 
-  Future<void> _fetchRoute() async {
+  Future<void> _fetchRoute({bool doAutoPan = false}) async {
     if (_driverPos == null) return;
     final dispatch = ref.read(dispatchProvider).activeDispatch;
     if (dispatch == null) return;
@@ -130,7 +133,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final url = 'https://router.project-osrm.org/route/v1/driving/'
         '${_driverPos!.longitude},${_driverPos!.latitude};'
         '${dest.longitude},${dest.latitude}'
-        '?overview=full&geometries=geojson';
+        '?overview=full&geometries=geojson&alternatives=true';
 
     try {
       final res = await RetryClient(http.Client())
@@ -141,8 +144,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
-        final route = body['routes']?[0];
-        if (route != null) {
+        final routes = body['routes'] as List?;
+        if (routes != null && routes.isNotEmpty) {
+          final route = routes[0];
           final coords = (route['geometry']['coordinates'] as List)
               .map((c) => LatLng(
                     (c[1] as num).toDouble(),
@@ -158,7 +162,20 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             _routeEtaMin = (durS / 60).ceil();
             _osrmLoading = false;
           });
-          _autoPan(dest);
+          
+          // Store alternate route if available
+          if (routes.length > 1) {
+            final altRoute = routes[1];
+            final altCoords = (altRoute['geometry']['coordinates'] as List)
+                .map((c) => LatLng(
+                      (c[1] as num).toDouble(),
+                      (c[0] as num).toDouble(),
+                    ))
+                .toList();
+            setState(() => _alternateRoute = altCoords);
+          }
+          
+          if (doAutoPan) _autoPan(dest);
           return;
         }
       }
@@ -173,6 +190,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         _routeEtaMin = LocationService.estimateMinutes(distKm);
         _osrmLoading = false;
       });
+      if (doAutoPan) _autoPan(dest);
     }
   }
 
@@ -241,14 +259,20 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final dispatchState = ref.watch(dispatchProvider);
     final dispatch = dispatchState.activeDispatch;
 
-    // Auto-pan on picked_up transition
+    // Auto-pan on status transition
     if (dispatch != null && dispatch.status != _lastStatus) {
+      final wasNull = _lastStatus == null;
       _lastStatus = dispatch.status;
-      if (dispatch.status == DispatchStatus.pickedUp &&
+      
+      if (wasNull && dispatch.status == DispatchStatus.assigned) {
+         WidgetsBinding.instance.addPostFrameCallback((_) {
+             _updateMetricsBaseline();
+             _fetchRoute(doAutoPan: true);
+         });
+      } else if (dispatch.status == DispatchStatus.pickedUp &&
           dispatch.hospitalLat != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _fetchRoute();
-          _autoPan(LatLng(dispatch.hospitalLat!, dispatch.hospitalLng!));
+          _fetchRoute(doAutoPan: true);
           _ttsService.speak(
               'Patient picked up. Heading to ${dispatchState.hospitalName ?? 'hospital'}.');
         });
@@ -300,18 +324,27 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     httpClient: RetryClient(http.Client())),
               ),
 
-              // Route polyline — always shown (OSRM or straight-line fallback)
+              // Route polylines with enhanced visualization
               if (_routePoints.length >= 2)
                 PolylineLayer(polylines: [
+                  // Main route
                   Polyline(
                     points: _routePoints,
                     color: isPickup
                         ? AppColors.emergencyBlue
                         : AppColors.success,
-                    strokeWidth: 5,
-                    borderColor: Colors.white.withValues(alpha: 0.5),
+                    strokeWidth: 6,
+                    borderColor: Colors.white.withValues(alpha: 0.8),
                     borderStrokeWidth: 2,
                   ),
+                  // Alternate route (if available and enabled)
+                  if (_showAlternateRoute && _alternateRoute.length >= 2)
+                    Polyline(
+                      points: _alternateRoute,
+                      color: Colors.grey.withValues(alpha: 0.6),
+                      strokeWidth: 4,
+                      pattern: StrokePattern.dashed(segments: [10, 5]),
+                    ),
                   // Faded preview leg: patient → hospital during pickup phase
                   if (isPickup && patientLoc != _gwaliorCenter)
                     Polyline(
@@ -425,6 +458,15 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     _isSatellite ? Icons.map : Icons.satellite_alt,
                     () => setState(() => _isSatellite = !_isSatellite),
                   ),
+                  const SizedBox(width: 8),
+                  _topBtn(
+                    _showAlternateRoute ? Icons.alt_route : Icons.route,
+                    () => setState(() {
+                      _showAlternateRoute = !_showAlternateRoute;
+                      _routeType = _routeType == 'fastest' ? 'shortest' : 'fastest';
+                      _fetchRoute(doAutoPan: true);
+                    }),
+                  ),
                 ],
               ),
             ),
@@ -436,6 +478,19 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             child: Column(children: [
               _mapFab(Icons.my_location, () {
                 if (_driverPos != null) _mapController.move(_driverPos!, 15);
+              }),
+              const SizedBox(height: 8),
+              _mapFab(Icons.navigation, () {
+                final dispatch = ref.read(dispatchProvider).activeDispatch;
+                if (dispatch != null && _driverPos != null) {
+                  final isPickup = dispatch.status == DispatchStatus.assigned;
+                  final dest = isPickup
+                      ? LatLng(dispatch.patientLat ?? _gwaliorCenter.latitude,
+                          dispatch.patientLng ?? _gwaliorCenter.longitude)
+                      : LatLng(dispatch.hospitalLat ?? _gwaliorCenter.latitude,
+                          dispatch.hospitalLng ?? _gwaliorCenter.longitude);
+                  _autoPan(dest);
+                }
               }),
               const SizedBox(height: 8),
               _mapFab(Icons.add, () {
