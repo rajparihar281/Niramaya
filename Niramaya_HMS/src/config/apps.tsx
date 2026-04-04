@@ -116,4 +116,13 @@ export const APPS: AppConfig[] = [
     defaultWidth: 900,
     defaultHeight: 650,
   },
+  {
+    id: 'queue-manager',
+    name: 'Queue Desk',
+    icon: <PeopleQueue24Regular />,
+    component: QueueManager,
+    roles: ['admin', 'receptionist'],
+    defaultWidth: 900,
+    defaultHeight: 650,
+  },
 ];
