@@ -72,4 +72,21 @@ export const api = {
   ping() {
     return request('/');
   },
+
+  /** GET /gov/symptom-trends */
+  symptomTrends(days = 14, district = null) {
+    const params = new URLSearchParams({ days });
+    if (district) params.append('district', district);
+    return request(`/gov/symptom-trends?${params}`);
+  },
+
+  /** GET /gov/pharma-trends */
+  pharmaTrends(days = 14) {
+    return request(`/gov/pharma-trends?days=${days}`);
+  },
+
+  /** GET /gov/bed-status */
+  bedStatus() {
+    return request('/gov/bed-status');
+  },
 };

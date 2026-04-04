@@ -1,10 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Radio, AlertTriangle, RefreshCw, MapPin, TrendingUp,
   Shield, Activity, Bed, Siren, Eye
 } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import HeatmapLayer from './gov/HeatmapLayer';
+import TrendChart from './gov/TrendChart';
+import ResourcePanel from './gov/ResourcePanel';
+import AlertSystem from './gov/AlertSystem';
+import ForecastChart from './gov/ForecastChart';
+import AmbulanceLayer from './gov/AmbulanceLayer';
+import MCIPanel from './gov/MCIPanel';
 import 'leaflet/dist/leaflet.css';
 import { api } from '../api';
 
@@ -40,17 +46,25 @@ const FitBounds = ({ outbreaks }) => {
 
 const GovDashboard = () => {
   const [data, setData] = useState(null);
+  const [prevData, setPrevData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [selectedOutbreak, setSelectedOutbreak] = useState(null);
   const [viewMode, setViewMode] = useState('heatmap'); // 'heatmap' | 'markers'
+  const [mciActive, setMciActive] = useState(false);
+  const [ambulances, setAmbulances] = useState([]);
+
+  const handleAmbulanceUpdate = useCallback((ambs) => {
+    setAmbulances(ambs);
+  }, []);
 
   const fetchOutbreaks = async () => {
     setLoading(true);
     setError(null);
     try {
       const result = await api.predictOutbreak();
+      setPrevData(data); // Store previous for alert diff
       setData(result);
       setLastRefresh(new Date());
     } catch (err) {
@@ -104,35 +118,41 @@ const GovDashboard = () => {
 
   return (
     <div className="animate-fade-in gov-dashboard">
+      {/* ── Alert System ── */}
+      <AlertSystem data={data} prevData={prevData} />
+
       {/* ── Header ── */}
       <div className="gov-header">
         <div className="flex items-center gap-2">
-          <Siren color="#0ea5e9" size={26} />
-          <h2 style={{ margin: 0 }}>Government Surveillance Dashboard</h2>
+          <Siren color="#3B82F6" size={18} />
+          <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, letterSpacing: '-0.01em' }}>Government Surveillance Dashboard</h2>
         </div>
         <div className="flex items-center gap-4">
           {lastRefresh && (
-            <span className="gov-timestamp">
-              <Activity size={12} className={loading ? 'spin' : ''} />
-              {loading ? 'Scanning...' : `Last: ${lastRefresh.toLocaleTimeString()}`}
+            <span className="gov-timestamp" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.65rem' }}>
+              <Activity size={10} className={loading ? 'spin' : ''} />
+              {loading ? 'SCANNING...' : `LAST: ${lastRefresh.toLocaleTimeString()}`}
             </span>
           )}
           <div className="flex gap-2">
             <button
               className={`btn btn-sm ${viewMode === 'heatmap' ? 'btn-primary' : 'btn-outline'}`}
               onClick={() => setViewMode('heatmap')}
+              style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem' }}
             >
-              <Eye size={14} /> Heatmap
+              <Eye size={12} /> Heatmap
             </button>
             <button
               className={`btn btn-sm ${viewMode === 'markers' ? 'btn-primary' : 'btn-outline'}`}
               onClick={() => setViewMode('markers')}
+              style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem' }}
             >
-              <MapPin size={14} /> Markers
+              <MapPin size={12} /> Markers
             </button>
           </div>
-          <button className="btn btn-outline btn-sm" onClick={fetchOutbreaks} disabled={loading}>
-            <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh
+          <button className="btn btn-outline btn-sm" onClick={fetchOutbreaks} disabled={loading}
+            style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem' }}>
+            <RefreshCw size={12} className={loading ? 'spin' : ''} /> Refresh
           </button>
         </div>
       </div>
@@ -148,8 +168,8 @@ const GovDashboard = () => {
 
       {/* ── Surge Alert Banner ── */}
       {data?.outbreaks?.some(o => o.surge_alert_triggered) && (
-        <div className="surge-banner pulse-emergency">
-          <Shield size={22} />
+        <div className="surge-banner">
+          <Shield size={16} />
           <div>
             <strong>⚠️ SURGE ALERT — Critical outbreak detected!</strong>
             <div style={{ fontSize: '0.85rem', fontWeight: 400, marginTop: '0.15rem' }}>
@@ -160,6 +180,7 @@ const GovDashboard = () => {
       )}
 
       {data && (
+        <>
         <div className="gov-grid">
           {/* ── Left: Map ── */}
           <div className="gov-map-panel">
@@ -178,7 +199,6 @@ const GovDashboard = () => {
 
                 {data.outbreaks?.length > 0 && <FitBounds outbreaks={data.outbreaks} />}
 
-                {/* Heatmap Layer */}
                 {viewMode === 'heatmap' && (
                   <HeatmapLayer
                     points={buildHeatPoints()}
@@ -190,7 +210,6 @@ const GovDashboard = () => {
                   />
                 )}
 
-                {/* Marker Layer */}
                 {viewMode === 'markers' && data.outbreaks?.map((outbreak, i) => {
                   const style = severityStyle(outbreak.severity);
                   const radius = getMarkerRadius(outbreak.spike_percentage);
@@ -228,20 +247,21 @@ const GovDashboard = () => {
                   );
                 })}
 
-                {/* All Clear marker */}
                 {viewMode === 'markers' && (!data.outbreaks || data.outbreaks.length === 0) && (
                   <CircleMarker center={DEFAULT_CENTER} radius={15}
                     pathOptions={{ color: '#10b981', fillColor: 'rgba(16, 185, 129, 0.25)', fillOpacity: 0.5, weight: 2 }}>
                     <Popup><div style={{ textAlign: 'center' }}><strong>All Clear</strong><br /><span style={{ fontSize: '0.8rem', color: '#64748b' }}>No anomalies in region</span></div></Popup>
                   </CircleMarker>
                 )}
+
+                {/* MCI Ambulance Markers */}
+                <AmbulanceLayer ambulances={ambulances} active={mciActive} />
               </MapContainer>
             </div>
           </div>
 
           {/* ── Right: Intel Panel ── */}
           <div className="gov-intel-panel">
-            {/* Stats */}
             <div className="gov-stats-row">
               <div className={`gov-stat ${anomalyCount > 0 ? 'gov-stat-danger' : 'gov-stat-ok'}`}>
                 <div className="stat-label">Threat Level</div>
@@ -267,7 +287,6 @@ const GovDashboard = () => {
               )}
             </div>
 
-            {/* Outbreak Cards */}
             <div className="gov-outbreak-list">
               {data.outbreaks?.length > 0 ? (
                 data.outbreaks.map((outbreak, i) => {
@@ -303,17 +322,19 @@ const GovDashboard = () => {
               )}
             </div>
 
-            {/* Placeholder panels for Phase 2 */}
-            <div className="gov-placeholder-panel">
-              <Bed size={18} style={{ opacity: 0.5 }} />
-              <span>Resource & Bed Status — <em>Phase 2</em></span>
-            </div>
-            <div className="gov-placeholder-panel">
-              <Activity size={18} style={{ opacity: 0.5 }} />
-              <span>Symptom & Pharma Trends — <em>Phase 2</em></span>
-            </div>
+            <ResourcePanel />
+
+            {/* MCI Operations */}
+            <MCIPanel mciActive={mciActive} setMciActive={setMciActive} onAmbulances={handleAmbulanceUpdate} />
           </div>
         </div>
+
+        {/* ── Bottom: Time-Series Trends (Full Width) ── */}
+        <TrendChart days={14} />
+
+        {/* ── 7-Day Forecast ── */}
+        <ForecastChart />
+        </>
       )}
     </div>
   );

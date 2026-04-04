@@ -6,6 +6,9 @@ const ENDPOINTS = [
   { name: 'Root Ping', key: 'ping', fn: () => api.ping(), method: 'GET', path: '/' },
   { name: 'ML Health', key: 'health', fn: () => api.health(), method: 'GET', path: '/ml/health' },
   { name: 'Epidemic Radar', key: 'outbreak', fn: () => api.predictOutbreak(), method: 'GET', path: '/predict-outbreak' },
+  { name: 'Symptom Trends', key: 'symptoms', fn: () => api.symptomTrends(7), method: 'GET', path: '/gov/symptom-trends' },
+  { name: 'Pharma Trends', key: 'pharma', fn: () => api.pharmaTrends(7), method: 'GET', path: '/gov/pharma-trends' },
+  { name: 'Bed Status', key: 'beds', fn: () => api.bedStatus(), method: 'GET', path: '/gov/bed-status' },
 ];
 
 const ConnectionStatus = () => {
