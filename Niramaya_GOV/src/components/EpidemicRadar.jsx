@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Radio, AlertTriangle, RefreshCw, MapPin, TrendingUp,
-  Shield, Activity, Bed, Siren, Eye
+  Shield, Activity, Bed, Siren, Eye, Building2
 } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip as LeafletTooltip, useMap } from 'react-leaflet';
 import HeatmapLayer from './gov/HeatmapLayer';
@@ -9,6 +9,7 @@ import TrendChart from './gov/TrendChart';
 import ResourcePanel from './gov/ResourcePanel';
 import AlertSystem from './gov/AlertSystem';
 import ForecastChart from './gov/ForecastChart';
+import HospitalLayer from './gov/HospitalLayer';
 import AmbulanceLayer from './gov/AmbulanceLayer';
 import MCIPanel from './gov/MCIPanel';
 import AnimatedCounter from './gov/AnimatedCounter';
@@ -75,6 +76,8 @@ const GovDashboard = () => {
   const [flyTarget, setFlyTarget] = useState(null);
   const [trendCache, setTrendCache] = useState({}); // { symptom_type: [val, val, ...] }
   const [detailOutbreak, setDetailOutbreak] = useState(null);
+  const [hospitals, setHospitals] = useState([]);
+  const [showHospitals, setShowHospitals] = useState(false);
 
   const handleAmbulanceUpdate = useCallback((ambs) => {
     setAmbulances(ambs);
@@ -88,12 +91,14 @@ const GovDashboard = () => {
     setLoading(true);
     setError(null);
     try {
-      const [result, trendRes] = await Promise.all([
+      const [result, trendRes, hospRes] = await Promise.all([
         api.predictOutbreak(),
         api.symptomTrends(7),
+        api.hospitals(),
       ]);
       setPrevData(data); // Store previous for alert diff
       setData(result);
+      if (hospRes?.hospitals) setHospitals(hospRes.hospitals);
       setLastRefresh(new Date());
 
       // Build sparkline data per symptom type from 7-day trends
@@ -193,6 +198,14 @@ const GovDashboard = () => {
               style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem' }}
             >
               <MapPin size={12} /> Markers
+            </button>
+            <div style={{ width: '1px', background: 'var(--glass-border)', margin: '0 4px' }} />
+            <button
+              className={`btn btn-sm ${showHospitals ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => setShowHospitals(!showHospitals)}
+              style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem' }}
+            >
+              <Building2 size={12} /> Hospitals
             </button>
           </div>
           <ExportButton data={data} />
@@ -324,6 +337,9 @@ const GovDashboard = () => {
 
                 {/* MCI Ambulance Markers */}
                 <AmbulanceLayer ambulances={ambulances} active={mciActive} />
+
+                {/* Hospital Layer */}
+                <HospitalLayer hospitals={hospitals} active={showHospitals} />
               </MapContainer>
             </div>
           </div>

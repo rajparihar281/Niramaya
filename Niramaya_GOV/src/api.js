@@ -89,4 +89,9 @@ export const api = {
   bedStatus() {
     return request('/gov/bed-status');
   },
+
+  /** GET /gov/hospitals */
+  hospitals() {
+    return request('/gov/hospitals');
+  },
 };
