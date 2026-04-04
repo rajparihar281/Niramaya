@@ -234,7 +234,7 @@ def retrain():
 
         df = process_supabase_data()
         source = "supabase"
-        if df.empty or len(df) < 5000:
+        if df.empty or len(df) < 500:
             df = generate_synthetic_department_data(5000)
             source = "synthetic"
 
