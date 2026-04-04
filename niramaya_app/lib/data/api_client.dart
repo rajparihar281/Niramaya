@@ -34,16 +34,13 @@ class ApiClient {
         onError: (error, handler) {
           debugPrint('✗ [ApiClient] ${error.type}: ${error.message}');
 
-          // Intercept connection-level failures (DNS lookup, tunnel down,
-          // timeout) and resolve them as a synthetic 503 response.
-          // This prevents NativeSocket.lookup from pausing the debugger
-          // and keeps all error handling in one place (statusCode checks).
           final isConnectionFailure =
               error.type == DioExceptionType.connectionError ||
               error.type == DioExceptionType.connectionTimeout ||
               error.type == DioExceptionType.receiveTimeout ||
               error.type == DioExceptionType.sendTimeout ||
-              error.error is SocketException;
+              error.error is SocketException ||
+              error.error is HandshakeException;
 
           if (isConnectionFailure) {
             debugPrint('⚠ [ApiClient] Engine unreachable — returning synthetic 503');
@@ -71,13 +68,31 @@ class ApiClient {
     required double latitude,
     required double longitude,
     String requiredDept = 'emergency',
-  }) {
-    return _dio.post(AppConstants.dispatchEndpoint, data: {
+  }) async {
+    final data = {
       'patient_id': patientId,
       'latitude': latitude,
       'longitude': longitude,
       'required_dept': requiredDept,
-    });
+    };
+    final response = await _dio.post(AppConstants.dispatchEndpoint, data: data);
+    // 503 from interceptor = TLS/connection failure — retry once with a
+    // fresh Dio instance to bust any stale cached TLS session.
+    if (response.statusCode == 503) {
+      debugPrint('🔄 [ApiClient] Retrying dispatch with fresh client...');
+      final fresh = Dio(BaseOptions(
+        baseUrl: AppConstants.backendBaseUrl,
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 45),
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
+        validateStatus: (status) => status != null && status < 600,
+      ));
+      return fresh.post(AppConstants.dispatchEndpoint, data: data);
+    }
+    return response;
   }
 
   /// GET /v1/dispatch/status?id=...

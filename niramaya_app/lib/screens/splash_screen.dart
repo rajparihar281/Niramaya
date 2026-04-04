@@ -57,7 +57,10 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     _ring3 = Tween<double>(begin: 0.65, end: 0.95).animate(
       CurvedAnimation(parent: _ring3Controller, curve: Curves.easeInOut),
     );
-    _textOpacity = CurvedAnimation(parent: _textController, curve: Curves.easeOut);
+    _textOpacity = CurvedAnimation(
+      parent: _textController,
+      curve: Curves.easeOut,
+    );
     _textSlide = Tween<Offset>(
       begin: const Offset(0, 0.3),
       end: Offset.zero,
@@ -70,8 +73,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     await Future.delayed(AppConstants.splashDuration);
     if (!mounted) return;
 
-    final isLoggedIn =
-        await ref.read(authProvider.notifier).checkPersistentLogin();
+    final isLoggedIn = await ref
+        .read(authProvider.notifier)
+        .checkPersistentLogin();
 
     if (!mounted) return;
 
@@ -100,10 +104,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
           gradient: RadialGradient(
             center: Alignment(0, -0.2),
             radius: 1.2,
-            colors: [
-              Color(0xFF0D1B2E),
-              AppColors.background,
-            ],
+            colors: [Color(0xFF0D1B2E), AppColors.background],
           ),
         ),
         child: SafeArea(
@@ -121,7 +122,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                     // Ring 3 — outermost, slowest
                     AnimatedBuilder(
                       animation: _ring3,
-                      builder: (_, __) => Transform.scale(
+                      builder: (_, _) => Transform.scale(
                         scale: _ring3.value,
                         child: Container(
                           width: 190,
@@ -139,7 +140,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                     // Ring 2 — middle
                     AnimatedBuilder(
                       animation: _ring2,
-                      builder: (_, __) => Transform.scale(
+                      builder: (_, _) => Transform.scale(
                         scale: _ring2.value,
                         child: Container(
                           width: 150,
@@ -157,7 +158,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                     // Ring 1 — innermost, fastest
                     AnimatedBuilder(
                       animation: _ring1,
-                      builder: (_, __) => Transform.scale(
+                      builder: (_, _) => Transform.scale(
                         scale: _ring1.value,
                         child: Container(
                           width: 110,
@@ -171,7 +172,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: AppColors.primary.withValues(alpha: 0.25),
+                                color: AppColors.primary.withValues(
+                                  alpha: 0.25,
+                                ),
                                 blurRadius: 30,
                                 spreadRadius: 10,
                               ),
@@ -220,7 +223,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                     children: [
                       Text(
                         'NIRAMAYA',
-                        style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                        style: Theme.of(context).textTheme.headlineLarge
+                            ?.copyWith(
                               color: AppColors.textPrimary,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 6,
@@ -231,10 +235,10 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                       Text(
                         'Emergency Medical Services',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: AppColors.primary,
-                              letterSpacing: 1.5,
-                              fontWeight: FontWeight.w500,
-                            ),
+                          color: AppColors.primary,
+                          letterSpacing: 1.5,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ),
@@ -248,7 +252,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                 padding: const EdgeInsets.only(bottom: 40),
                 child: Column(
                   children: [
-                    Container(
+                    SizedBox(
                       width: 24,
                       height: 24,
                       child: CircularProgressIndicator(

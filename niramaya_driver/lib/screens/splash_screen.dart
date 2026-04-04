@@ -124,7 +124,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                   children: [
                     AnimatedBuilder(
                       animation: _ring3,
-                      builder: (_, __) => Transform.scale(
+                      builder: (ctx, child) => Transform.scale(
                         scale: _ring3.value,
                         child: Container(
                           width: 210,

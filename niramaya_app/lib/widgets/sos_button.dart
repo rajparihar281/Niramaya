@@ -43,10 +43,7 @@ class _SosButtonState extends State<SosButton> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 2200),
     )..repeat(reverse: true);
 
-    _holdController = AnimationController(
-      vsync: this,
-      duration: _holdDuration,
-    );
+    _holdController = AnimationController(vsync: this, duration: _holdDuration);
 
     _pressController = AnimationController(
       vsync: this,
@@ -91,10 +88,14 @@ class _SosButtonState extends State<SosButton> with TickerProviderStateMixin {
     Navigator.pushNamed(context, '/sos-trigger');
   }
 
-  Widget _pulseRing(AnimationController controller, double size, double alphaMax) {
+  Widget _pulseRing(
+    AnimationController controller,
+    double size,
+    double alphaMax,
+  ) {
     return AnimatedBuilder(
       animation: controller,
-      builder: (_, __) {
+      builder: (_, _) {
         final scale = 1.0 + controller.value * 0.22;
         final opacity = 1.0 - controller.value * 0.75;
         return Transform.scale(
@@ -104,7 +105,9 @@ class _SosButtonState extends State<SosButton> with TickerProviderStateMixin {
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppColors.emergencyRed.withValues(alpha: opacity * alphaMax),
+              color: AppColors.emergencyRed.withValues(
+                alpha: opacity * alphaMax,
+              ),
             ),
           ),
         );
@@ -138,7 +141,7 @@ class _SosButtonState extends State<SosButton> with TickerProviderStateMixin {
                   // Progress arc during hold
                   AnimatedBuilder(
                     animation: _holdController,
-                    builder: (_, __) => CustomPaint(
+                    builder: (ctx, child) => CustomPaint(
                       size: const Size(168, 168),
                       painter: _ArcPainter(_holdController.value),
                     ),
@@ -146,10 +149,13 @@ class _SosButtonState extends State<SosButton> with TickerProviderStateMixin {
 
                   // Main button with press compression
                   AnimatedBuilder(
-                    animation: Listenable.merge([_holdController, _pressController]),
-                    builder: (_, __) {
+                    animation: Listenable.merge([
+                      _holdController,
+                      _pressController,
+                    ]),
+                    builder: (ctx, child) {
                       final pressScale = 1.0 - _pressController.value * 0.04;
-                      final holdScale  = 1.0 - _holdController.value * 0.06;
+                      final holdScale = 1.0 - _holdController.value * 0.06;
                       return Transform.scale(
                         scale: pressScale * holdScale,
                         child: Container(
@@ -164,13 +170,17 @@ class _SosButtonState extends State<SosButton> with TickerProviderStateMixin {
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: AppColors.emergencyRed.withValues(alpha: 0.55),
+                                color: AppColors.emergencyRed.withValues(
+                                  alpha: 0.55,
+                                ),
                                 blurRadius: 28,
                                 spreadRadius: _isHolding ? 8 : 3,
                                 offset: const Offset(0, 6),
                               ),
                               BoxShadow(
-                                color: AppColors.emergencyRed.withValues(alpha: 0.15),
+                                color: AppColors.emergencyRed.withValues(
+                                  alpha: 0.15,
+                                ),
                                 blurRadius: 50,
                                 spreadRadius: 12,
                               ),
