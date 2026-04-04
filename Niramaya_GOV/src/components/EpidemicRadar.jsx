@@ -240,6 +240,32 @@ const GovDashboard = () => {
 
       {data && (
         <>
+        {/* ── Top: Executive Summary Stats ── */}
+        <div className="gov-stats-row gov-stats-header">
+          <div className={`gov-stat ${anomalyCount > 0 ? 'gov-stat-danger' : 'gov-stat-ok'}`}>
+            <div className="stat-label">Threat Level</div>
+            <div className="gov-stat-value">
+              {surgeCount > 0 ? '🔴 CRITICAL' : anomalyCount > 0 ? '🟡 ELEVATED' : '🟢 NORMAL'}
+            </div>
+          </div>
+          <div className="gov-stat">
+            <div className="stat-label">Districts</div>
+            <div className="gov-stat-value"><AnimatedCounter value={data.analyzed_districts} /></div>
+          </div>
+          <div className={`gov-stat ${anomalyCount > 0 ? 'gov-stat-danger' : ''}`}>
+            <div className="stat-label">Anomalies</div>
+            <div className="gov-stat-value" style={{ color: anomalyCount > 0 ? 'var(--accent-danger)' : 'var(--accent-success)' }}>
+              <AnimatedCounter value={anomalyCount} />
+            </div>
+          </div>
+          {surgeCount > 0 && (
+            <div className="gov-stat gov-stat-danger">
+              <div className="stat-label">🚨 Surges</div>
+              <div className="gov-stat-value" style={{ color: 'var(--accent-danger)' }}><AnimatedCounter value={surgeCount} /></div>
+            </div>
+          )}
+        </div>
+
         <div className="gov-grid">
           {/* ── Left: Map ── */}
           <div className="gov-map-panel">
@@ -346,86 +372,60 @@ const GovDashboard = () => {
 
           {/* ── Right: Intel Panel ── */}
           <div className="gov-intel-panel">
-            <div className="gov-stats-row">
-              <div className={`gov-stat ${anomalyCount > 0 ? 'gov-stat-danger' : 'gov-stat-ok'}`}>
-                <div className="stat-label">Threat Level</div>
-                <div className="gov-stat-value">
-                  {surgeCount > 0 ? '🔴 CRITICAL' : anomalyCount > 0 ? '🟡 ELEVATED' : '🟢 NORMAL'}
-                </div>
-              </div>
-              <div className="gov-stat">
-                <div className="stat-label">Districts</div>
-                <div className="gov-stat-value"><AnimatedCounter value={data.analyzed_districts} /></div>
-              </div>
-              <div className={`gov-stat ${anomalyCount > 0 ? 'gov-stat-danger' : ''}`}>
-                <div className="stat-label">Anomalies</div>
-                <div className="gov-stat-value" style={{ color: anomalyCount > 0 ? 'var(--accent-danger)' : 'var(--accent-success)' }}>
-                  <AnimatedCounter value={anomalyCount} />
-                </div>
-              </div>
-              {surgeCount > 0 && (
-                <div className="gov-stat gov-stat-danger">
-                  <div className="stat-label">🚨 Surges</div>
-                  <div className="gov-stat-value" style={{ color: 'var(--accent-danger)' }}><AnimatedCounter value={surgeCount} /></div>
-                </div>
-              )}
+            <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>
+              <Activity size={14} /> Active Anomalies detected
             </div>
-
-            <div>
-              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                <Activity size={14} /> Active Anomalies detected
-              </div>
-              <div className="gov-outbreak-list">
-              {data.outbreaks?.length > 0 ? (
-                data.outbreaks.map((outbreak, i) => {
-                  const style = severityStyle(outbreak.severity);
-                  return (
-                    <div key={i}
-                      className={`gov-outbreak-card ${selectedOutbreak === i ? 'outbreak-card-selected' : ''}`}
-                      style={{ borderLeftColor: style.color }}
-                      onClick={() => { setSelectedOutbreak(i); handleZoomToOutbreak(outbreak); setDetailOutbreak(outbreak); }}
-                    >
-                      <div className="flex justify-between items-center" style={{ marginBottom: '0.4rem' }}>
-                        <span className="gov-severity-tag" style={{ background: style.color }}>{outbreak.severity}</span>
-                        {outbreak.surge_alert_triggered && <span style={{ color: 'var(--accent-danger)', fontSize: '0.75rem', fontWeight: 600 }}>🚨 SURGE</span>}
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{outbreak.indicator}</div>
-                        {trendCache[outbreak.indicator] && (
-                          <Sparkline
-                            data={trendCache[outbreak.indicator]}
-                            width={72}
-                            height={22}
-                            color={style.color}
-                          />
-                        )}
-                      </div>
-                      <div className="flex justify-between" style={{ marginTop: '0.4rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        <span className="flex items-center gap-2"><MapPin size={12} /> {outbreak.district}</span>
-                        <span className="flex items-center gap-2"><TrendingUp size={12} /> +<AnimatedCounter value={parseFloat(outbreak.spike_percentage.toFixed(0))} />%</span>
-                      </div>
-                      <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                        Confidence: <strong style={{ color: outbreak.ml_confidence >= 0.8 ? 'var(--accent-danger)' : 'var(--accent-warning)' }}><AnimatedCounter value={parseFloat((outbreak.ml_confidence * 100).toFixed(0))} />%</strong>
-                        {' · '}Avg: {outbreak.recent_daily_avg}/day vs {outbreak.baseline_daily_avg}/day
-                      </div>
+            <div className="gov-outbreak-list">
+            {data.outbreaks?.length > 0 ? (
+              data.outbreaks.map((outbreak, i) => {
+                const style = severityStyle(outbreak.severity);
+                return (
+                  <div key={i}
+                    className={`gov-outbreak-card ${selectedOutbreak === i ? 'outbreak-card-selected' : ''}`}
+                    style={{ borderLeftColor: style.color }}
+                    onClick={() => { setSelectedOutbreak(i); handleZoomToOutbreak(outbreak); setDetailOutbreak(outbreak); }}
+                  >
+                    <div className="flex justify-between items-center" style={{ marginBottom: '0.4rem' }}>
+                      <span className="gov-severity-tag" style={{ background: style.color }}>{outbreak.severity}</span>
+                      {outbreak.surge_alert_triggered && <span style={{ color: 'var(--accent-danger)', fontSize: '0.75rem', fontWeight: 600 }}>🚨 SURGE</span>}
                     </div>
-                  );
-                })
-              ) : (
-                <div className="gov-all-clear">
-                  <Shield size={36} style={{ opacity: 0.4 }} />
-                  <div>No active outbreaks</div>
-                  <div style={{ fontSize: '0.8rem' }}>All {data.analyzed_districts} districts within normal parameters</div>
-                </div>
-              )}
+                    <div className="flex justify-between items-center">
+                      <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{outbreak.indicator}</div>
+                      {trendCache[outbreak.indicator] && (
+                        <Sparkline
+                          data={trendCache[outbreak.indicator]}
+                          width={72}
+                          height={22}
+                          color={style.color}
+                        />
+                      )}
+                    </div>
+                    <div className="flex justify-between" style={{ marginTop: '0.4rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      <span className="flex items-center gap-2"><MapPin size={12} /> {outbreak.district}</span>
+                      <span className="flex items-center gap-2"><TrendingUp size={12} /> +<AnimatedCounter value={parseFloat(outbreak.spike_percentage.toFixed(0))} />%</span>
+                    </div>
+                    <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      Confidence: <strong style={{ color: outbreak.ml_confidence >= 0.8 ? 'var(--accent-danger)' : 'var(--accent-warning)' }}><AnimatedCounter value={parseFloat((outbreak.ml_confidence * 100).toFixed(0))} />%</strong>
+                      {' · '}Avg: {outbreak.recent_daily_avg}/day vs {outbreak.baseline_daily_avg}/day
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="gov-all-clear">
+                <Shield size={36} style={{ opacity: 0.4 }} />
+                <div>No active outbreaks</div>
+                <div style={{ fontSize: '0.8rem' }}>All {data.analyzed_districts} districts within normal parameters</div>
+              </div>
+            )}
             </div>
-            </div>
-
-            <ResourcePanel />
-
-            {/* MCI Operations */}
-            <MCIPanel mciActive={mciActive} setMciActive={setMciActive} onAmbulances={handleAmbulanceUpdate} />
           </div>
+        </div>
+
+        {/* ── Middle-Lower: Operational Logistics ── */}
+        <div className="gov-logistics-row">
+          <ResourcePanel />
+          <MCIPanel mciActive={mciActive} setMciActive={setMciActive} onAmbulances={handleAmbulanceUpdate} />
         </div>
 
         {/* ── Bottom: Time-Series Trends (Full Width) ── */}

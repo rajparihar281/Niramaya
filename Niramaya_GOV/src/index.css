@@ -497,11 +497,9 @@ select.form-input {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  max-height: 560px;
-  overflow-y: auto;
+  height: 560px;
+  overflow: hidden;
   padding-right: 0.5rem;
-  scrollbar-width: thin;
-  scrollbar-color: var(--glass-border) transparent;
 }
 
 /* Stats row */
@@ -509,6 +507,21 @@ select.form-input {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.75rem;
+}
+
+/* Override for the new top full-width header block */
+.gov-stats-header {
+  grid-template-columns: repeat(4, 1fr);
+  margin-bottom: 1.25rem;
+}
+
+/* Lower operational logistics tier */
+.gov-logistics-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-top: 1.25rem;
+  align-items: start;
 }
 
 .gov-stat {
@@ -538,8 +551,8 @@ select.form-input {
 .gov-outbreak-list {
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 0.75rem;
-  max-height: 320px;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--glass-border) transparent;
