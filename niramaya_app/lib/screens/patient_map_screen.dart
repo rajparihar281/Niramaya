@@ -10,6 +10,7 @@ import 'package:vibration/vibration.dart';
 
 import 'package:niramaya_shared/realtime_service.dart';
 import 'package:niramaya_shared/osrm_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/theme.dart';
 
 class PatientMapScreen extends ConsumerStatefulWidget {
@@ -104,25 +105,22 @@ class _PatientMapScreenState extends ConsumerState<PatientMapScreen>
   }
 
   Timer? _routeTimer;
-  void _fetchRoute(DispatchUpdate dispatch, LatLng? patientPos, LatLng? hospitalPos) {
+  void _fetchRoute(DispatchUpdate dispatch, LatLng? patientPos, LatLng? hospitalPos, {bool force = false}) {
     if (_ambulancePos == null) return;
-    if (_lastRoutedPos != null) {
+    if (!force && _lastRoutedPos != null) {
       final d = const Distance().as(LengthUnit.Meter, _ambulancePos!, _lastRoutedPos!);
       if (d < 30) return;
     }
     _routeTimer?.cancel();
-    _routeTimer = Timer(const Duration(seconds: 2), () async {
+    _routeTimer = Timer(const Duration(seconds: 1), () async {
       final osrm = ref.read(osrmServiceProvider);
       _lastRoutedPos = _ambulancePos;
 
-      LatLng? target;
-      if (['assigned', 'en_route_pickup'].contains(dispatch.status) && patientPos != null) {
-        target = patientPos;
-      } else if (dispatch.status == 'en_route_hospital' && hospitalPos != null) {
-        target = hospitalPos;
-      }
-
+      final toHospital = ['arrived', 'picked_up', 'en_route_hospital']
+          .contains(dispatch.status);
+      final target = !toHospital ? patientPos : hospitalPos;
       if (target == null) return;
+
       final r = await osrm.getRoute(_ambulancePos!, target);
       if (r != null && mounted) {
         setState(() {
@@ -130,19 +128,28 @@ class _PatientMapScreenState extends ConsumerState<PatientMapScreen>
           _etaSeconds = r.durationTotal;
           _distanceMeters = r.distanceTotal;
         });
+        if (!_hasInitialFit) {
+          _fitBounds([_ambulancePos!, target]);
+          _hasInitialFit = true;
+        }
       }
     });
   }
 
-  void _handleStatusChange(String newStatus) {
+  void _handleStatusChange(String newStatus, DispatchUpdate dispatch, LatLng? patientPos, LatLng? hospitalPos) {
     if (newStatus == _lastStatus) return;
     _lastStatus = newStatus;
 
-    // Vibrate on key events
     if (newStatus == 'assigned' || newStatus == 'en_route_pickup') {
       _vibrate([0, 200, 100, 200]);
-    } else if (newStatus == 'arrived_pickup') {
+    } else if (newStatus == 'arrived') {
       _vibrate([0, 400, 100, 400]);
+      _lastRoutedPos = null;
+      _fetchRoute(dispatch, patientPos, hospitalPos, force: true);
+    } else if (newStatus == 'picked_up' || newStatus == 'en_route_hospital') {
+      _vibrate([0, 300, 100, 300]);
+      _lastRoutedPos = null;
+      _fetchRoute(dispatch, patientPos, hospitalPos, force: true);
     }
   }
 
@@ -182,9 +189,6 @@ class _PatientMapScreenState extends ConsumerState<PatientMapScreen>
             _listenToDriver(dispatch.driverId!);
           }
 
-          // Handle status transitions (vibration)
-          _handleStatusChange(dispatch.status);
-
           final patientPos = (dispatch.patientLat != null && dispatch.patientLng != null)
               ? LatLng(dispatch.patientLat!, dispatch.patientLng!)
               : null;
@@ -192,18 +196,21 @@ class _PatientMapScreenState extends ConsumerState<PatientMapScreen>
               ? LatLng(dispatch.hospitalLat!, dispatch.hospitalLng!)
               : null;
 
-          // Auto-fit on first ambulance fix
+          // Handle status transitions — passes context for immediate re-route
+          _handleStatusChange(dispatch.status, dispatch, patientPos, hospitalPos);
+
+          // Always attempt route fetch; force=true on first ambulance fix
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!_hasInitialFit && _ambulancePos != null && patientPos != null) {
-              _fitBounds([_ambulancePos!, patientPos]);
-              _hasInitialFit = true;
-            }
+            _fetchRoute(dispatch, patientPos, hospitalPos,
+                force: _ambulancePos != null && !_hasInitialFit);
           });
 
           _fetchRoute(dispatch, patientPos, hospitalPos);
 
           // Route color: teal for pickup, green for hospital
-          final routeColor = dispatch.status == 'en_route_hospital'
+          final toHospital = ['arrived', 'picked_up', 'en_route_hospital']
+              .contains(dispatch.status);
+          final routeColor = toHospital
               ? AppColors.hospitalGreen
               : AppColors.primary;
 
@@ -319,6 +326,7 @@ class _PatientMapScreenState extends ConsumerState<PatientMapScreen>
                   dispatch: dispatch,
                   etaSeconds: _etaSeconds,
                   distanceMeters: _distanceMeters,
+                  dispatchId: widget.dispatchId,
                 ),
               ),
             ],
@@ -506,12 +514,45 @@ class _BottomPanel extends StatelessWidget {
   final DispatchUpdate dispatch;
   final double etaSeconds;
   final double distanceMeters;
+  final String dispatchId;
 
   const _BottomPanel({
     required this.dispatch,
     required this.etaSeconds,
     required this.distanceMeters,
+    required this.dispatchId,
   });
+
+  Future<void> _cancel(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Cancel Dispatch?'),
+        content: const Text('This will cancel the ambulance dispatch and notify the driver.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.emergencyRed),
+            child: const Text('Yes, Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await Supabase.instance.client
+          .from('dispatches')
+          .update({'status': 'cancelled'})
+          .eq('id', dispatchId);
+    } catch (e) {
+      debugPrint('[PatientMap] cancel failed: $e');
+    }
+    if (context.mounted) Navigator.of(context).popUntil((r) => r.isFirst);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -617,19 +658,36 @@ class _BottomPanel extends StatelessWidget {
               ],
 
               const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () => launchUrl(Uri.parse('tel:108')),
-                  icon: const Icon(Icons.call, size: 18),
-                  label: const Text('Call Dispatch · 108'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.emergencyRed,
-                    side: const BorderSide(color: AppColors.emergencyRed),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => launchUrl(Uri.parse('tel:108')),
+                      icon: const Icon(Icons.call, size: 18),
+                      label: const Text('Call · 108'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.emergencyRed,
+                        side: const BorderSide(color: AppColors.emergencyRed),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _cancel(context),
+                      icon: const Icon(Icons.cancel_outlined, size: 18),
+                      label: const Text('Cancel'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.textSecondary,
+                        side: const BorderSide(color: AppColors.border),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -640,23 +698,28 @@ class _BottomPanel extends StatelessWidget {
 
   String _statusLabel(String s) {
     switch (s) {
-      case 'assigned':         return 'Ambulance dispatched — on the way';
-      case 'en_route_pickup':  return 'Ambulance is heading to you';
-      case 'arrived_pickup':   return '🚑 Ambulance has arrived!';
-      case 'en_route_hospital': return 'En route to hospital';
-      case 'completed':        return 'Dispatch completed';
-      default:                 return 'Locating ambulance…';
+      case 'assigned':          return 'Ambulance dispatched — on the way';
+      case 'en_route_pickup':   return 'Ambulance is heading to you';
+      case 'arrived_pickup':    return '🚑 Ambulance has arrived!';
+      case 'arrived':           return '🚑 Ambulance has arrived at your location!';
+      case 'picked_up':         return '🏥 En route to hospital with patient';
+      case 'en_route_hospital': return '🏥 En route to hospital';
+      case 'completed':         return '✅ Dispatch completed';
+      case 'cancelled':         return 'Dispatch was cancelled';
+      default:                  return 'Locating ambulance…';
     }
   }
 
   Color _statusColor(String s) {
     switch (s) {
       case 'assigned':
-      case 'en_route_pickup':  return AppColors.primary;
-      case 'arrived_pickup':   return AppColors.hospitalGreen;
+      case 'en_route_pickup':   return AppColors.primary;
+      case 'arrived_pickup':
+      case 'arrived':           return AppColors.hospitalGreen;
+      case 'picked_up':
       case 'en_route_hospital': return AppColors.warningAmber;
-      case 'completed':        return AppColors.hospitalGreen;
-      default:                 return AppColors.textMuted;
+      case 'completed':         return AppColors.hospitalGreen;
+      default:                  return AppColors.textMuted;
     }
   }
 }

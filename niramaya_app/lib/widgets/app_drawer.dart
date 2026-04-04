@@ -139,18 +139,6 @@ class AppDrawer extends ConsumerWidget {
                       Navigator.pushNamed(context, '/profile');
                     },
                   ),
-                  _DrawerItem(
-                    icon: Icons.history_rounded,
-                    label: 'My Dispatches',
-                    badge: 'Soon',
-                    onTap: () {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Dispatch history coming soon')),
-                      );
-                    },
-                  ),
-
                   const SizedBox(height: 4),
                   Container(height: 1, color: AppColors.border, margin: const EdgeInsets.symmetric(horizontal: 16)),
                   const SizedBox(height: 4),
@@ -172,17 +160,6 @@ class AppDrawer extends ConsumerWidget {
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Coming soon')),
-                      );
-                    },
-                  ),
-                  _DrawerItem(
-                    icon: Icons.verified_rounded,
-                    label: 'Audit Trail',
-                    badge: 'Soon',
-                    onTap: () {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Blockchain audit trail — coming soon')),
                       );
                     },
                   ),

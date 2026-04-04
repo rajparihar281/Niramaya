@@ -64,6 +64,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             const Spacer(flex: 2),
             FadeTransition(
@@ -72,6 +73,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                 scale: _scale,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     // Icon badge
                     Container(
@@ -135,6 +137,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
             Padding(
               padding: const EdgeInsets.only(bottom: 40),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   SizedBox(
                     width: 20,

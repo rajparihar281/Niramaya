@@ -420,13 +420,13 @@ class _NoDriverView extends StatelessWidget {
         const Icon(Icons.warning_amber_rounded, size: 80, color: Colors.white),
         const SizedBox(height: 24),
         const Text(
-          'NO GOVT. AMBULANCE\nAVAILABLE',
+          'NO AMBULANCE\nAVAILABLE',
           textAlign: TextAlign.center,
           style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 1, height: 1.3),
         ),
         const SizedBox(height: 12),
         const Text(
-          'All government drivers are currently busy\nor off duty in your area.',
+          'All  drivers are currently busy\nor off duty in your area.',
           textAlign: TextAlign.center,
           style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
         ),
@@ -437,7 +437,7 @@ class _NoDriverView extends StatelessWidget {
           child: ElevatedButton.icon(
             onPressed: onBroadcast,
             icon: const Icon(Icons.cell_tower, size: 22),
-            label: const Text('BROADCAST TO PRIVATE AMBULANCES',
+            label: const Text('AMBULANCES',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.white,

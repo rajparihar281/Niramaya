@@ -40,6 +40,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   String _routeType = 'fastest'; // 'fastest', 'shortest', 'avoid_tolls'
 
   DispatchStatus? _lastStatus;
+  // Persisted destination so re-entering the map restores the correct route
+  LatLng? _activeDestination;
 
   static const LatLng _gwaliorCenter = LatLng(26.218, 78.182);
   static const double _reachThresholdM = 50;
@@ -49,6 +51,20 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     super.initState();
     _ttsService.init();
     _initLocation();
+    // Listen for cancellation outside of build() to guarantee navigation fires
+    WidgetsBinding.instance.addPostFrameCallback((_) => _listenForCancel());
+  }
+
+  void _listenForCancel() {
+    ref.listenManual(dispatchProvider, (previous, next) {
+      if (!mounted) return;
+      final wasActive = previous?.activeDispatch != null;
+      final nowIdle = next.uiState == DispatchUiState.idle && next.activeDispatch == null;
+      if (next.wasCancelled || (wasActive && nowIdle)) {
+        ref.read(dispatchProvider.notifier).resetCancelledFlag();
+        Navigator.of(context).popUntil((r) => r.isFirst);
+      }
+    });
   }
 
   Future<void> _initLocation() async {
@@ -62,11 +78,23 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           : _gwaliorCenter;
     });
 
-    // Set haversine baseline immediately so metrics show something
-    _updateMetricsBaseline();
+    // Restore correct destination based on current provider status
+    // This handles re-entry after driver exited the map mid-dispatch
+    final dispatch = ref.read(dispatchProvider).activeDispatch;
+    if (dispatch != null) {
+      final isPostPickup = dispatch.status == DispatchStatus.arrived ||
+          dispatch.status == DispatchStatus.pickedUp;
+      _activeDestination = isPostPickup && dispatch.hospitalLat != null
+          ? LatLng(dispatch.hospitalLat!, dispatch.hospitalLng!)
+          : dispatch.patientLat != null
+              ? LatLng(dispatch.patientLat!, dispatch.patientLng!)
+              : null;
+    }
 
-    // Then fetch OSRM route
-    await _fetchRoute(doAutoPan: true);
+    _updateMetricsBaseline();
+    if (_driverPos != null) _updateProximity(_driverPos!);
+
+    await _fetchRoute(doAutoPan: true, dest: _activeDestination);
     _announcePhase();
 
     _positionSub = LocationService.instance.startPositionStream().listen((pos) {
@@ -76,13 +104,22 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         _driverPos = newPos;
         _updateProximity(newPos);
       });
-      _fetchRoute();
+      _fetchRoute(dest: _activeDestination);
     });
 
     _osrmTimer = Timer.periodic(
       const Duration(seconds: 30),
-      (_) => _fetchRoute(),
+      (_) => _fetchRoute(dest: _activeDestination),
     );
+
+    // Compute initial ETA immediately using straight-line if OSRM hasn't loaded
+    if (_routeDistKm == 0 && _activeDestination != null && _driverPos != null) {
+      final distKm = LocationService.distanceKm(_driverPos!, _activeDestination!);
+      setState(() {
+        _routeDistKm = distKm;
+        _routeEtaMin = LocationService.estimateMinutes(distKm);
+      });
+    }
   }
 
   // Compute straight-line distance/ETA immediately as a baseline
@@ -109,31 +146,42 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   void _updateProximity(LatLng driverPos) {
     final dispatch = ref.read(dispatchProvider).activeDispatch;
     if (dispatch?.patientLat == null) return;
+    // Only track proximity during pickup phase
+    if (dispatch!.status != DispatchStatus.assigned) {
+      setState(() => _distToPatientM = 0);
+      return;
+    }
     final d = Geolocator.distanceBetween(
       driverPos.latitude, driverPos.longitude,
-      dispatch!.patientLat!, dispatch.patientLng!,
+      dispatch.patientLat!, dispatch.patientLng!,
     );
     setState(() => _distToPatientM = d);
   }
 
-  Future<void> _fetchRoute({bool doAutoPan = false}) async {
+  // [dest] is optional — when provided it overrides the status-based target.
+  // This is critical for confirmReach: the provider status hasn't updated yet
+  // when the button fires, so we pass hospitalLoc directly.
+  Future<void> _fetchRoute({bool doAutoPan = false, LatLng? dest}) async {
     if (_driverPos == null) return;
     final dispatch = ref.read(dispatchProvider).activeDispatch;
     if (dispatch == null) return;
 
-    // Route to patient only when assigned; all other statuses route to hospital
-    final toPatient = dispatch.status == DispatchStatus.assigned;
-    final dest = toPatient
-        ? LatLng(dispatch.patientLat ?? _gwaliorCenter.latitude,
-            dispatch.patientLng ?? _gwaliorCenter.longitude)
-        : LatLng(dispatch.hospitalLat ?? _gwaliorCenter.latitude,
-            dispatch.hospitalLng ?? _gwaliorCenter.longitude);
+    // Resolve destination: explicit override > status-based
+    final target = dest ?? (() {
+      final toPatient = dispatch.status == DispatchStatus.assigned;
+      return toPatient
+          ? LatLng(dispatch.patientLat ?? _gwaliorCenter.latitude,
+              dispatch.patientLng ?? _gwaliorCenter.longitude)
+          : LatLng(dispatch.hospitalLat ?? _gwaliorCenter.latitude,
+              dispatch.hospitalLng ?? _gwaliorCenter.longitude);
+    })();
 
+    if (_osrmLoading) return;
     setState(() => _osrmLoading = true);
 
     final url = 'https://router.project-osrm.org/route/v1/driving/'
         '${_driverPos!.longitude},${_driverPos!.latitude};'
-        '${dest.longitude},${dest.latitude}'
+        '${target.longitude},${target.latitude}'
         '?overview=full&geometries=geojson&alternatives=true';
 
     try {
@@ -163,11 +211,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             _routeEtaMin = (durS / 60).ceil();
             _osrmLoading = false;
           });
-          
-          // Store alternate route if available
+
           if (routes.length > 1) {
-            final altRoute = routes[1];
-            final altCoords = (altRoute['geometry']['coordinates'] as List)
+            final altCoords = (routes[1]['geometry']['coordinates'] as List)
                 .map((c) => LatLng(
                       (c[1] as num).toDouble(),
                       (c[0] as num).toDouble(),
@@ -175,8 +221,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 .toList();
             setState(() => _alternateRoute = altCoords);
           }
-          
-          if (doAutoPan) _autoPan(dest);
+
+          if (doAutoPan) _autoPan(target);
           return;
         }
       }
@@ -184,14 +230,14 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
     // Fallback: straight line
     if (mounted) {
-      final distKm = LocationService.distanceKm(_driverPos!, dest);
+      final distKm = LocationService.distanceKm(_driverPos!, target);
       setState(() {
-        _routePoints = [_driverPos!, dest];
+        _routePoints = [_driverPos!, target];
         _routeDistKm = distKm;
         _routeEtaMin = LocationService.estimateMinutes(distKm);
         _osrmLoading = false;
       });
-      if (doAutoPan) _autoPan(dest);
+      if (doAutoPan) _autoPan(target);
     }
   }
 
@@ -272,15 +318,21 @@ class _MapScreenState extends ConsumerState<MapScreen> {
          });
       } else if (dispatch.status == DispatchStatus.arrived &&
           dispatch.hospitalLat != null) {
+        final hospitalDest = LatLng(dispatch.hospitalLat!, dispatch.hospitalLng!);
+        _activeDestination = hospitalDest;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _fetchRoute(doAutoPan: true);
+          setState(() { _routePoints = []; _alternateRoute = []; _osrmLoading = false; });
+          _fetchRoute(doAutoPan: true, dest: hospitalDest);
           _ttsService.speak(
               'Patient reached. Fetching route to ${dispatchState.hospitalName ?? 'hospital'}.');
         });
       } else if (dispatch.status == DispatchStatus.pickedUp &&
           dispatch.hospitalLat != null) {
+        final hospitalDest = LatLng(dispatch.hospitalLat!, dispatch.hospitalLng!);
+        _activeDestination = hospitalDest;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _fetchRoute(doAutoPan: true);
+          setState(() { _routePoints = []; _alternateRoute = []; _osrmLoading = false; });
+          _fetchRoute(doAutoPan: true, dest: hospitalDest);
           _ttsService.speak(
               'Patient picked up. Heading to ${dispatchState.hospitalName ?? 'hospital'}.');
         });
@@ -301,7 +353,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final isArrived = dispatch?.status == DispatchStatus.arrived;
     final isPickedUp = dispatch?.status == DispatchStatus.pickedUp;
     final toHospital = isArrived || isPickedUp;
-    final withinReach = _distToPatientM <= _reachThresholdM;
+    // Always allow button tap — proximity check is advisory only
+    final withinReach = _distToPatientM <= _reachThresholdM || _distToPatientM.isInfinite;
 
     final distLabel = _routeDistKm > 0
         ? '${_routeDistKm.toStringAsFixed(1)} km'
@@ -362,67 +415,67 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 ]),
 
               MarkerLayer(markers: [
-                // Driver
+                // Driver/ambulance marker
                 if (_driverPos != null)
                   Marker(
                     point: _driverPos!,
-                    width: 44, height: 44,
+                    width: 48, height: 48,
                     child: Container(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: AppColors.primary,
+                        color: AppColors.driverBlue,
                         border: Border.all(color: Colors.white, width: 3),
                         boxShadow: [
                           BoxShadow(
-                              color: AppColors.primary.withValues(alpha: 0.5),
-                              blurRadius: 12)
+                              color: AppColors.driverBlue.withValues(alpha: 0.5),
+                              blurRadius: 14)
                         ],
                       ),
-                      child: const Icon(Icons.local_shipping,
-                          color: Colors.white, size: 20),
+                      child: const Icon(Icons.personal_injury,
+                          color: Colors.white, size: 22),
                     ),
                   ),
 
-                // Patient
-                if (dispatch?.patientLat != null)
+                // Patient marker — only visible during pickup phase
+                if (isPickup && dispatch?.patientLat != null)
                   Marker(
                     point: patientLoc,
                     width: 48, height: 48,
                     child: Container(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: AppColors.emergencyBlue,
+                        color: AppColors.emergencyRed,
                         border: Border.all(color: Colors.white, width: 3),
                         boxShadow: [
                           BoxShadow(
-                              color: AppColors.emergencyBlue
-                                  .withValues(alpha: 0.5),
+                              color: AppColors.emergencyRed.withValues(alpha: 0.5),
                               blurRadius: 12)
                         ],
                       ),
-                      child: const Icon(Icons.person_pin_circle,
+                      child: const Icon(Icons.airport_shuttle,
                           color: Colors.white, size: 22),
                     ),
                   ),
 
-                // Hospital
+                // Hospital — always visible so driver can see destination
                 if (dispatch?.hospitalLat != null)
                   Marker(
                     point: hospitalLoc,
-                    width: 44, height: 44,
+                    width: 52, height: 52,
                     child: Container(
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.success,
+                        shape: BoxShape.rectangle,
+                        borderRadius: BorderRadius.circular(10),
+                        color: AppColors.hospitalGreen,
                         border: Border.all(color: Colors.white, width: 3),
                         boxShadow: [
                           BoxShadow(
-                              color: AppColors.success.withValues(alpha: 0.5),
-                              blurRadius: 12)
+                              color: AppColors.hospitalGreen.withValues(alpha: 0.5),
+                              blurRadius: 14)
                         ],
                       ),
                       child: const Icon(Icons.local_hospital,
-                          color: Colors.white, size: 20),
+                          color: Colors.white, size: 24),
                     ),
                   ),
               ]),
@@ -637,9 +690,18 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                       child: isPickup
                           ? ElevatedButton(
                               onPressed: () async {
+                                final dispatch = ref.read(dispatchProvider).activeDispatch;
+                                final hospitalDest = (dispatch?.hospitalLat != null)
+                                    ? LatLng(dispatch!.hospitalLat!, dispatch.hospitalLng!)
+                                    : null;
                                 await ref.read(dispatchProvider.notifier).confirmReach();
-                                // Immediately fetch hospital route after confirming reach
-                                await _fetchRoute(doAutoPan: true);
+                                setState(() {
+                                  _activeDestination = hospitalDest;
+                                  _routePoints = [];
+                                  _alternateRoute = [];
+                                  _osrmLoading = false;
+                                });
+                                await _fetchRoute(doAutoPan: true, dest: hospitalDest);
                                 _ttsService.speak(
                                     'Patient reached. Navigating to ${dispatchState.hospitalName ?? 'hospital'}.');
                               },
@@ -648,11 +710,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                                 foregroundColor: Colors.white,
                               ),
                               child: Text(
-                                withinReach
-                                    ? 'PATIENT SECURED · NAVIGATE TO HOSPITAL'
-                                    : _distToPatientM.isInfinite
-                                        ? 'LOCATING PATIENT...'
-                                        : 'APPROACHING · ${_distToPatientM.toInt()}m away',
+                                _distToPatientM.isInfinite
+                                    ? 'CONFIRM PATIENT REACHED'
+                                    : _distToPatientM > _reachThresholdM
+                                        ? 'APPROACHING · ${_distToPatientM.toInt()}m · TAP TO CONFIRM'
+                                        : 'PATIENT SECURED · NAVIGATE TO HOSPITAL',
                                 style: const TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
                               ),
                             )

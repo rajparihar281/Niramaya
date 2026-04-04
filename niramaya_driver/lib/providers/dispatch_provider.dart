@@ -16,12 +16,14 @@ class DispatchState {
   final DispatchModel? activeDispatch;
   final String? hospitalName;
   final DateTime? dispatchStartTime;
+  final bool wasCancelled;
 
   const DispatchState({
     this.uiState = DispatchUiState.idle,
     this.activeDispatch,
     this.hospitalName,
     this.dispatchStartTime,
+    this.wasCancelled = false,
   });
 
   DispatchState copyWith({
@@ -29,12 +31,14 @@ class DispatchState {
     DispatchModel? activeDispatch,
     String? hospitalName,
     DateTime? dispatchStartTime,
+    bool? wasCancelled,
   }) {
     return DispatchState(
       uiState: uiState ?? this.uiState,
       activeDispatch: activeDispatch ?? this.activeDispatch,
       hospitalName: hospitalName ?? this.hospitalName,
       dispatchStartTime: dispatchStartTime ?? this.dispatchStartTime,
+      wasCancelled: wasCancelled ?? this.wasCancelled,
     );
   }
 
@@ -93,8 +97,25 @@ class DispatchNotifier extends StateNotifier<DispatchState> {
     _reconnectDelay = 4;
     debugPrint('[DispatchProvider] 📦 Realtime rows: ${rows.length}');
 
-    // Ghost fix: only consider non-completed dispatches
-    final live = rows.where((r) => r['status'] != 'completed').toList();
+    // Handle cancellation — check the currently active dispatch specifically
+    if (state.activeDispatch != null) {
+      final activeId = state.activeDispatch!.id;
+      final activeRow = rows.where((r) => r['id']?.toString() == activeId).firstOrNull;
+      if (activeRow != null && activeRow['status'] == 'cancelled') {
+        debugPrint('[DispatchProvider] 🚫 Dispatch $activeId cancelled by patient');
+        _osrmTimer?.cancel();
+        state = const DispatchState(
+          uiState: DispatchUiState.idle,
+          wasCancelled: true,
+        );
+        _alertedIds.clear();
+        return;
+      }
+    }
+
+    // Ghost fix: only consider non-completed, non-cancelled dispatches
+    final live = rows.where((r) =>
+        r['status'] != 'completed' && r['status'] != 'cancelled').toList();
 
     // New assigned dispatch: must be recent (within last 5 minutes) AND
     // not yet alerted in-memory or DB. This prevents old stale rows from
@@ -191,46 +212,59 @@ class DispatchNotifier extends StateNotifier<DispatchState> {
   // ── OSRM live ETA: update dispatches.live_dist_km/live_eta_min every 10s ──
   void _startOsrmTimer(String dispatchId) {
     _osrmTimer?.cancel();
-    _osrmTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
-      final dispatch = state.activeDispatch;
-      final driverPos = LocationService.instance.lastLatLng;
-      if (dispatch == null || driverPos == null) return;
+    // Run immediately on alert, then every 10s
+    _computeAndWriteEta(dispatchId);
+    _osrmTimer = Timer.periodic(const Duration(seconds: 10),
+        (_) => _computeAndWriteEta(dispatchId));
+  }
 
-      final toPatient = dispatch.status == DispatchStatus.assigned;
-      final dest = toPatient
-          ? LatLng(dispatch.patientLat ?? 0, dispatch.patientLng ?? 0)
-          : LatLng(dispatch.hospitalLat ?? 0, dispatch.hospitalLng ?? 0);
-      if (dest.latitude == 0) return;
+  Future<void> _computeAndWriteEta(String dispatchId) async {
+    final dispatch = state.activeDispatch;
+    final driverPos = LocationService.instance.lastLatLng;
+    if (dispatch == null) return;
 
-      double distKm;
-      int etaMin;
+    // If GPS not ready yet, fall back to straight-line from dispatch coords
+    LatLng? pos = driverPos;
+    if (pos == null && dispatch.patientLat != null) {
+      // Use patient location as proxy until GPS warms up
+      pos = LatLng(dispatch.patientLat!, dispatch.patientLng!);
+    }
+    if (pos == null) return;
 
-      try {
-        final url = 'https://router.project-osrm.org/route/v1/driving/'
-            '${driverPos.longitude},${driverPos.latitude};'
-            '${dest.longitude},${dest.latitude}?overview=false';
-        final res = await http.get(Uri.parse(url))
-            .timeout(const Duration(seconds: 8));
-        if (res.statusCode == 200) {
-          final body = jsonDecode(res.body);
-          final route = body['routes']?[0];
-          distKm = (route?['distance'] as num? ?? 0) / 1000;
-          etaMin = ((route?['duration'] as num? ?? 0) / 60).ceil();
-        } else {
-          throw Exception('OSRM ${res.statusCode}');
-        }
-      } catch (_) {
-        distKm = LocationService.distanceKm(driverPos, dest);
-        etaMin = LocationService.estimateMinutes(distKm);
+    final toPatient = dispatch.status == DispatchStatus.assigned;
+    final dest = toPatient
+        ? LatLng(dispatch.patientLat ?? 0, dispatch.patientLng ?? 0)
+        : LatLng(dispatch.hospitalLat ?? 0, dispatch.hospitalLng ?? 0);
+    if (dest.latitude == 0) return;
+
+    double distKm;
+    int etaMin;
+
+    try {
+      final url = 'https://router.project-osrm.org/route/v1/driving/'
+          '${pos.longitude},${pos.latitude};'
+          '${dest.longitude},${dest.latitude}?overview=false';
+      final res = await http.get(Uri.parse(url))
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        final route = body['routes']?[0];
+        distKm = (route?['distance'] as num? ?? 0) / 1000;
+        etaMin = ((route?['duration'] as num? ?? 0) / 60).ceil();
+      } else {
+        throw Exception('OSRM ${res.statusCode}');
       }
+    } catch (_) {
+      distKm = LocationService.distanceKm(pos, dest);
+      etaMin = LocationService.estimateMinutes(distKm);
+    }
 
-      try {
-        await SupabaseService.client.from('dispatches').update({
-          'live_distance': '${distKm.toStringAsFixed(1)} km',
-          'live_eta': '~$etaMin min',
-        }).eq('id', dispatchId);
-      } catch (_) {}
-    });
+    try {
+      await SupabaseService.client.from('dispatches').update({
+        'live_distance': '${distKm.toStringAsFixed(1)} km',
+        'live_eta': '~$etaMin min',
+      }).eq('id', dispatchId);
+    } catch (_) {}
   }
 
   Future<void> _enrichAndSetActive(Map<String, dynamic> row) async {
@@ -297,6 +331,12 @@ class DispatchNotifier extends StateNotifier<DispatchState> {
       _osrmTimer?.cancel();
     } catch (e) {
       debugPrint('[DispatchProvider] ❌ completeDispatch failed: $e');
+    }
+  }
+
+  void resetCancelledFlag() {
+    if (state.wasCancelled) {
+      state = const DispatchState(uiState: DispatchUiState.idle);
     }
   }
 

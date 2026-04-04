@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:vibration/vibration.dart';
 import 'package:niramaya_shared/realtime_service.dart';
 import 'package:niramaya_shared/osrm_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/constants.dart';
 import '../core/theme.dart';
 import '../data/models/dispatch_model.dart';
@@ -157,9 +158,21 @@ class _DispatchTrackingScreenState extends ConsumerState<DispatchTrackingScreen>
     super.dispose();
   }
 
-  void _handleCancel() {
+  Future<void> _handleCancel() async {
+    final dispatchId = _dispatch?.dispatchId;
+    if (dispatchId != null && dispatchId.isNotEmpty) {
+      try {
+        // Write cancelled to Supabase — driver's realtime stream will pick this up
+        await Supabase.instance.client
+            .from('dispatches')
+            .update({'status': 'cancelled'})
+            .eq('id', dispatchId);
+      } catch (e) {
+        debugPrint('[Cancel] Supabase update failed: $e');
+      }
+    }
     ref.read(dispatchProvider.notifier).clear();
-    Navigator.pop(context);
+    if (mounted) Navigator.pop(context);
   }
 
   String _formatEta(double seconds) {

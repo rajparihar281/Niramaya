@@ -213,6 +213,14 @@ func handleDispatch(w http.ResponseWriter, r *http.Request) {
 	log.Printf("📝 [dispatch] Dispatch record created id=%s driver=%s marked off-duty",
 		dID, driverID)
 
+	// ── Blockchain audit log (non-fatal) ──────────────────────────────────────
+	txHash, bcErr := logDispatchOnChain(hashedPatientID, hID, req.RequiredDept)
+	if bcErr != nil {
+		log.Printf("⚠ [blockchain] logDispatch skipped: %v", bcErr)
+	} else {
+		log.Printf("⛓ [blockchain] audit logged tx=%s", txHash)
+	}
+
 	guardianCount, guardianErr := dispatchGuardianAlerts(ctx, req.PatientID, dID, req.Latitude, req.Longitude)
 	if guardianErr != nil {
 		log.Printf("⚠ [dispatch] Guardian alert fanout failed: %v", guardianErr)
@@ -231,6 +239,7 @@ func handleDispatch(w http.ResponseWriter, r *http.Request) {
 		"eta_minutes":             math.Round(etaMinutes),
 		"patient_id_sha":          hashedPatientID,
 		"guardian_alerts_emitted": guardianCount,
+		"blockchain_tx":           txHash,
 	}
 	log.Printf("📤 [dispatch] Response → %+v", response)
 	writeJSON(w, http.StatusOK, response)
