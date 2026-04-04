@@ -30,9 +30,10 @@ def fetch_departments() -> pd.DataFrame:
         print(f"Error fetching departments: {e}")
         return pd.DataFrame()
 
-def fetch_symptom_logs(limit: int = 10000) -> pd.DataFrame:
+def fetch_symptom_logs(limit: int = 10000, days: int = 17) -> pd.DataFrame:
     try:
-        response = supabase.table("symptom_logs").select("*").limit(limit).execute()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        response = supabase.table("symptom_logs").select("*").gte("created_at", cutoff).limit(limit).execute()
         return pd.DataFrame(response.data)
     except Exception as e:
         print(f"Error fetching symptom_logs: {e}")

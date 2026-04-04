@@ -78,13 +78,7 @@ def detect_outbreaks(days_baseline: int = 14) -> dict:
         pharm_df['district'] = 'Global'
         pharm_df['is_synthetic'] = False
 
-    if not sym_df.empty:
-        latest_date = sym_df['created_at'].max()
-        # Use the latest date in the db, or current time if the db has future dates
-        now = latest_date
-    else:
-        now = datetime.now(timezone.utc)
-        
+    now = datetime.now(timezone.utc)
     recent_cutoff = now - timedelta(days=3)
     baseline_cutoff = recent_cutoff - timedelta(days=days_baseline)
     long_baseline_cutoff = recent_cutoff - timedelta(days=7)
@@ -111,8 +105,7 @@ def detect_outbreaks(days_baseline: int = 14) -> dict:
             base_agg['baseline_daily_avg'] = base_agg['occurrence_count'] / days_baseline
             merged = pd.merge(recent_agg, base_agg[['district', group_col, 'baseline_daily_avg']], on=['district', group_col], how='left')
         else:
-            merged = recent_agg
-            merged['baseline_daily_avg'] = 0.1
+            return pd.DataFrame()  # No baseline data, skip alerts
 
         merged['baseline_daily_avg'] = merged['baseline_daily_avg'].fillna(0.1)
 
@@ -138,7 +131,7 @@ def detect_outbreaks(days_baseline: int = 14) -> dict:
             recent_avg = row['recent_daily_avg']
             base_avg = row['baseline_daily_avg']
 
-            if recent_avg >= 2.0:
+            if recent_avg >= 10.0:
                 spike_percentage = ((recent_avg - base_avg) / base_avg) * 100
 
                 is_cross = 0
@@ -150,25 +143,26 @@ def detect_outbreaks(days_baseline: int = 14) -> dict:
                         pharm_spike_vel = match['spike_velocity'].max()
 
                 confidence = 0.0
+                is_ml_epidemic = False
                 if OUTBREAK_MODEL:
+                    severity_index = min(10.0, row['spike_velocity'] * 1.5)
+                    transmission = min(1.0, row['spike_velocity'] / 10.0)
                     X = np.array([[
                         row['spike_velocity'],
                         pharm_spike_vel,
                         is_cross,
-                        5.0,
-                        0.8
+                        severity_index,
+                        transmission
                     ]])
                     confidence = float(OUTBREAK_MODEL.predict_proba(X)[0][1])
-                    is_ml_epidemic = confidence > 0.5
-                else:
-                    is_ml_epidemic = spike_percentage > 500
+                    is_ml_epidemic = confidence > 0.9 and spike_percentage > 800
 
                 if 'latitude' in row and 'longitude' in row and pd.notna(row['latitude']) and pd.notna(row['longitude']):
                     coords = {"lat": float(row['latitude']), "lng": float(row['longitude'])}
                 else:
                     coords = DISTRICT_COORDS.get(row['district'], {"lat": 28.5, "lng": 77.0})
 
-                if spike_percentage > 200:
+                if spike_percentage > 500:
                     outbreaks.append({
                         "district": row['district'],
                         "location": coords,

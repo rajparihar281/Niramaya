@@ -203,18 +203,6 @@ def predict_outbreak():
         if is_surge:
             surge_count += 1
             alert_msg = f"[{datetime.now().strftime('%H:%M:%S')}] SURGE ALERT: CRITICAL {alert['type']} ({alert['indicator']}) detected in {alert['district']}! Confidence: {alert['ml_confidence']}"
-
-            print("\n" + "!" * 80)
-            print(f"!!! {alert_msg.upper()} !!!")
-            print("!" * 80 + "\n")
-
-            try:
-                log_path = os.path.join(BASE_DIR, "surge_alerts.log")
-                with open(log_path, "a") as f:
-                    f.write(alert_msg + "\n")
-            except Exception as e:
-                print(f"File Logging Error: {e}")
-
             try:
                 supabase.table("team_logs").insert({
                     "log_type": "SURGE_ALERT",
