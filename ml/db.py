@@ -53,6 +53,26 @@ def fetch_pharmacy_sales(limit: int = 10000) -> pd.DataFrame:
         print(f"Error fetching pharmacy_sales: {e}")
         return pd.DataFrame()
 
+def fetch_hospitals() -> pd.DataFrame:
+    try:
+        response = supabase.table("hospitals").select("id, name, location, address").eq("is_active", True).execute()
+        rows = []
+        for h in response.data:
+            loc = h.get("location")
+            lat, lng = None, None
+            if loc:
+                try:
+                    import struct, binascii
+                    b = binascii.unhexlify(loc)
+                    lng, lat = struct.unpack_from('<dd', b, 9)
+                except Exception:
+                    pass
+            rows.append({"id": h["id"], "name": h["name"], "address": h.get("address"), "lat": lat, "lng": lng})
+        return pd.DataFrame(rows)
+    except Exception as e:
+        print(f"Error fetching hospitals: {e}")
+        return pd.DataFrame()
+
 def fetch_symptom_logs_with_dates(days: int = 14, district: str = None) -> pd.DataFrame:
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()

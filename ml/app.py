@@ -271,6 +271,43 @@ def health():
         "onnx_available": model_metadata.get("onnx_export") == "success",
     }
 
+@app.get("/gov/hospital-locations")
+def hospital_locations():
+    from db import fetch_hospitals
+    try:
+        df = fetch_hospitals()
+        if not df.empty:
+            df = df.dropna(subset=["lat", "lng"])
+    except Exception:
+        df = pd.DataFrame()
+
+    if df.empty:
+        # Fallback for UI Dev: Mumbai-centric dummy hospitals
+        hospitals = [
+            {"id": "HOSP-DUM-001", "name": "Niramaya Central Mumbai", "address": "Worli, Mumbai", "lat": 19.0176, "lng": 72.8173},
+            {"id": "HOSP-DUM-002", "name": "Niramaya North Heights", "address": "Borivali, Mumbai", "lat": 19.2307, "lng": 72.8567},
+            {"id": "HOSP-DUM-003", "name": "Niramaya East Clinic", "address": "Ghatkopar, Mumbai", "lat": 19.0865, "lng": 72.9090},
+            {"id": "HOSP-DUM-004", "name": "Sea View Hospital", "address": "Marine Drive, Mumbai", "lat": 18.9440, "lng": 72.8238},
+            {"id": "HOSP-DUM-005", "name": "Tech City Medical Center", "address": "Powai, Mumbai", "lat": 19.1176, "lng": 72.9060},
+        ]
+        return {"status": "success", "total": len(hospitals), "hospitals": hospitals, "is_synthetic": True}
+
+    df["lat"] = df["lat"].astype(float).round(6)
+    df["lng"] = df["lng"].astype(float).round(6)
+    
+    hospitals = []
+    for r in df.to_dict(orient="records"):
+        hospitals.append({
+            "id": r.get("id"),
+            "name": r.get("name") if pd.notna(r.get("name")) else None,
+            "address": r.get("address") if pd.notna(r.get("address")) else None,
+            "lat": r.get("lat") if pd.notna(r.get("lat")) else None,
+            "lng": r.get("lng") if pd.notna(r.get("lng")) else None
+        })
+        
+    return {"status": "success", "total": len(hospitals), "hospitals": hospitals, "is_synthetic": False}
+
+
 @app.get("/gov/symptom-trends")
 def symptom_trends(days: int = 14, district: str = None):
     from db import fetch_symptom_logs_with_dates
