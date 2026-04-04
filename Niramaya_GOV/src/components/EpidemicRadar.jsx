@@ -371,7 +371,11 @@ const GovDashboard = () => {
               )}
             </div>
 
-            <div className="gov-outbreak-list">
+            <div>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <Activity size={14} /> Active Anomalies detected
+              </div>
+              <div className="gov-outbreak-list">
               {data.outbreaks?.length > 0 ? (
                 data.outbreaks.map((outbreak, i) => {
                   const style = severityStyle(outbreak.severity);
@@ -414,6 +418,7 @@ const GovDashboard = () => {
                   <div style={{ fontSize: '0.8rem' }}>All {data.analyzed_districts} districts within normal parameters</div>
                 </div>
               )}
+            </div>
             </div>
 
             <ResourcePanel />
