@@ -5,6 +5,7 @@ import {
   DataTrending32Regular,
   DocumentPill24Regular,
   Box32Regular,
+  PeopleQueue24Regular,
   AlertUrgent24Regular,
   ShieldKeyhole24Regular,
   ShoppingBag24Regular,
@@ -21,6 +22,7 @@ const SOSMonitor = lazy(() => import('@/pages/SOSMonitor'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const AuditLog = lazy(() => import('@/pages/AuditLog'));
 const SymptomLogs = lazy(() => import('@/pages/SymptomLogs'));
+const QueueManager = lazy(() => import('@/pages/QueueManager'));
 
 export interface AppConfig {
   id: string;
