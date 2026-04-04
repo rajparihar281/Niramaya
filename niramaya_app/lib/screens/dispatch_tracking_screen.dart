@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart';
 import 'package:http/retry.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:vibration/vibration.dart';
 import 'package:niramaya_shared/realtime_service.dart';
+import 'package:niramaya_shared/osrm_service.dart';
 import '../core/constants.dart';
 import '../core/theme.dart';
 import '../data/models/dispatch_model.dart';
@@ -30,6 +32,11 @@ class _DispatchTrackingScreenState
   LatLng? _hospitalLocation;
   LatLng? _ambulanceLocation;
   DispatchModel? _dispatch;
+  List<LatLng> _route = [];
+  double _etaSeconds = 0;
+  double _distanceMeters = 0;
+  String _lastStatus = '';
+  Timer? _routeTimer;
 
   @override
   void initState() {
@@ -83,6 +90,7 @@ class _DispatchTrackingScreenState
           .listen((loc) {
         if (loc.location != null && mounted) {
           setState(() => _ambulanceLocation = loc.location);
+          _fetchRoute();
         }
       });
     }
@@ -93,10 +101,49 @@ class _DispatchTrackingScreenState
     });
   }
 
+  void _fetchRoute() {
+    if (_ambulanceLocation == null) return;
+    final currentStatus = _dispatch?.status ?? _lastStatus;
+    final target = currentStatus == 'en_route_hospital'
+        ? _hospitalLocation
+        : _userLocation;
+    if (target == null) return;
+    _routeTimer?.cancel();
+    _routeTimer = Timer(const Duration(seconds: 2), () async {
+      final r = await ref.read(osrmServiceProvider).getRoute(_ambulanceLocation!, target);
+      if (r != null && mounted) {
+        setState(() {
+          _route = r.polyline;
+          _etaSeconds = r.durationTotal;
+          _distanceMeters = r.distanceTotal;
+        });
+      }
+    });
+  }
+
+  void _handleStatusChange(String newStatus) {
+    if (newStatus == _lastStatus) return;
+    _lastStatus = newStatus;
+    if (newStatus == 'assigned' || newStatus == 'en_route_pickup') {
+      _doVibrate([0, 200, 100, 200]);
+    } else if (newStatus == 'arrived_pickup') {
+      _doVibrate([0, 400, 100, 400]);
+    }
+    // Re-fetch route whenever status changes (e.g. pickup → hospital)
+    _fetchRoute();
+  }
+
+  Future<void> _doVibrate(List<int> pattern) async {
+    if (await Vibration.hasVibrator()) {
+      Vibration.vibrate(pattern: pattern);
+    }
+  }
+
   @override
   void dispose() {
     _pollTimer?.cancel();
     _driverSub?.cancel();
+    _routeTimer?.cancel();
     super.dispose();
   }
 
@@ -118,8 +165,14 @@ class _DispatchTrackingScreenState
     }
 
     final center = _userLocation ?? const LatLng(20.5937, 78.9629);
+    final status = _dispatch?.status ?? dispatchState.status?.status ?? '';
+    _handleStatusChange(status);
+    final routeColor = status == 'en_route_hospital'
+        ? AppColors.hospitalGreen
+        : AppColors.primary;
 
     return Scaffold(
+      backgroundColor: Colors.white,
       body: Stack(
         children: [
           FlutterMap(
@@ -140,13 +193,20 @@ class _DispatchTrackingScreenState
                   httpClient: RetryClient(Client()),
                 ),
               ),
-              // Route line: ambulance → user
-              if (_ambulanceLocation != null && _userLocation != null)
+              // OSRM route polyline
+              if (_route.isNotEmpty)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(points: _route, color: routeColor.withValues(alpha: 0.2), strokeWidth: 8),
+                    Polyline(points: _route, color: routeColor, strokeWidth: 4.5),
+                  ],
+                )
+              else if (_ambulanceLocation != null && _userLocation != null)
                 PolylineLayer(
                   polylines: [
                     Polyline(
                       points: [_ambulanceLocation!, _userLocation!],
-                      color: AppColors.accent.withValues(alpha: 0.6),
+                      color: routeColor.withValues(alpha: 0.4),
                       strokeWidth: 3,
                     ),
                   ],
@@ -161,12 +221,12 @@ class _DispatchTrackingScreenState
                       height: 30,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: AppColors.accent,
+                          color: AppColors.primary,
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 3),
                           boxShadow: [
                             BoxShadow(
-                              color: AppColors.accent.withValues(alpha: 0.4),
+                              color: AppColors.primary.withValues(alpha: 0.4),
                               blurRadius: 8,
                               spreadRadius: 2,
                             ),
@@ -240,11 +300,46 @@ class _DispatchTrackingScreenState
                 onTap: () => Navigator.pop(context),
                 child: const Padding(
                   padding: EdgeInsets.all(10),
-                  child: Icon(Icons.arrow_back, size: 22),
+                  child: Icon(Icons.arrow_back, size: 22, color: AppColors.textPrimary),
                 ),
               ),
             ),
           ),
+
+          // Live ETA/Distance badge
+          if (_etaSeconds > 0)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 8,
+              right: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '${(_etaSeconds / 60).ceil()} min',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: routeColor),
+                        ),
+                        Text(
+                          _distanceMeters >= 1000
+                              ? '${(_distanceMeters / 1000).toStringAsFixed(1)} km'
+                              : '${_distanceMeters.toInt()} m',
+                          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
           // Bottom panel
           Positioned(
@@ -305,19 +400,25 @@ class _DispatchTrackingScreenState
                           ],
                         ),
                       ),
-                      // Live ETA from OSRM
+                            // Live ETA from OSRM
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            dispatch.liveEta ?? '${dispatch.etaMinutes.toInt()} min',
-                            style: const TextStyle(
+                            _etaSeconds > 0
+                                ? '${(_etaSeconds / 60).ceil()} min'
+                                : dispatch.liveEta ?? '${dispatch.etaMinutes.toInt()} min',
+                            style: TextStyle(
                               fontSize: 16, fontWeight: FontWeight.w800,
-                              color: AppColors.primary,
+                              color: routeColor,
                             ),
                           ),
                           Text(
-                            dispatch.liveDistance ?? dispatch.distance,
+                            _distanceMeters > 0
+                                ? _distanceMeters >= 1000
+                                    ? '${(_distanceMeters / 1000).toStringAsFixed(1)} km'
+                                    : '${_distanceMeters.toInt()} m'
+                                : dispatch.liveDistance ?? dispatch.distance,
                             style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
                           ),
                         ],

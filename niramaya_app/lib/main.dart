@@ -18,6 +18,13 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SupabaseClientHelper.initialize();
 
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.dark,
+    systemNavigationBarColor: Colors.white,
+    systemNavigationBarIconBrightness: Brightness.dark,
+  ));
+
   // Cold-start: check if launched via hardware SOS key
   bool hardwareSosTrigger = false;
   try {
@@ -59,7 +66,7 @@ class _NiramayaAppState extends State<NiramayaApp> {
       navigatorKey: _navigatorKey,
       title: 'Niramaya',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
+      theme: AppTheme.lightTheme,
       initialRoute: widget.hardwareSosTrigger ? '/sos-trigger' : '/',
       routes: {
         '/': (context) => const SplashScreen(),

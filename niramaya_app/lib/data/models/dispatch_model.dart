@@ -6,6 +6,7 @@ class DispatchModel {
   final String patientIdSha;
   final int guardianAlertsEmitted;
   final String? driverId;
+  final String? status;
   final double? patientLat;
   final double? patientLng;
   final double? hospitalLat;
@@ -28,6 +29,7 @@ class DispatchModel {
     required this.patientIdSha,
     this.guardianAlertsEmitted = 0,
     this.driverId,
+    this.status,
     this.patientLat,
     this.patientLng,
     this.hospitalLat,
@@ -49,6 +51,7 @@ class DispatchModel {
       patientIdSha: json['patient_id_sha']?.toString() ?? '',
       guardianAlertsEmitted: json['guardian_alerts_emitted'] as int? ?? 0,
       driverId: json['driver_id']?.toString(),
+      status: json['status']?.toString(),
       patientLat: (json['patient_lat'] as num?)?.toDouble(),
       patientLng: (json['patient_lng'] as num?)?.toDouble(),
       hospitalLat: (json['hospital_lat'] as num?)?.toDouble(),
