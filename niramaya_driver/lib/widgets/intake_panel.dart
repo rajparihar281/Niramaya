@@ -79,7 +79,7 @@ class IntakePanel extends StatelessWidget {
                                foregroundColor: Colors.white,
                                padding: const EdgeInsets.symmetric(vertical: 14),
                              ),
-                             child: const Text('Confirm Pickup', style: TextStyle(fontWeight: FontWeight.bold)),
+                             child: const Text('Patient Secured · Navigate to Hospital', style: TextStyle(fontWeight: FontWeight.bold)),
                            ),
                          )
                        ],

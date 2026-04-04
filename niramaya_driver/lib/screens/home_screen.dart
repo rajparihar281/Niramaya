@@ -172,11 +172,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Widget _buildTopBar(dynamic profile, AsyncValue<String> hospitalName) {
-    final hospName = hospitalName.when(
-      data: (n) => n,
-      loading: () => '...',
-      error: (_, _) => 'Unknown',
-    );
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -184,9 +179,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF0D1B2E), AppColors.card],
+          colors: [Color.fromARGB(255, 112, 171, 255), AppColors.card],
         ),
-        border: Border(bottom: BorderSide(color: AppColors.border, width: 1)),
+        border: Border(bottom: BorderSide(color: Color.fromARGB(255, 255, 255, 255), width: 1)),
       ),
       child: Row(
         children: [
@@ -254,55 +249,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
 
           // Hospital chip
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: AppColors.cardElevated,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.local_hospital_outlined, size: 12, color: AppColors.primary),
-                const SizedBox(width: 4),
-                Text(
-                  hospName,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          // Rating
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            decoration: BoxDecoration(
-              color: AppColors.warning.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.warning.withValues(alpha: 0.2)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.star_rounded, color: AppColors.warning, size: 14),
-                const SizedBox(width: 3),
-                Text(
-                  (profile?.rating ?? 5.0).toStringAsFixed(1),
-                  style: const TextStyle(
-                    color: AppColors.warning,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
+         
         ],
       ),
     );

@@ -196,9 +196,8 @@ class DispatchNotifier extends StateNotifier<DispatchState> {
       final driverPos = LocationService.instance.lastLatLng;
       if (dispatch == null || driverPos == null) return;
 
-      final isPickup = dispatch.status == DispatchStatus.assigned ||
-          dispatch.status == DispatchStatus.pickedUp;
-      final dest = isPickup
+      final toPatient = dispatch.status == DispatchStatus.assigned;
+      final dest = toPatient
           ? LatLng(dispatch.patientLat ?? 0, dispatch.patientLng ?? 0)
           : LatLng(dispatch.hospitalLat ?? 0, dispatch.hospitalLng ?? 0);
       if (dest.latitude == 0) return;

@@ -91,8 +91,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final dispatch = ref.read(dispatchProvider).activeDispatch;
     if (dispatch == null) return;
 
-    final isPickup = dispatch.status == DispatchStatus.assigned;
-    final dest = isPickup
+    final toPatient = dispatch.status == DispatchStatus.assigned;
+    final dest = toPatient
         ? LatLng(dispatch.patientLat ?? _gwaliorCenter.latitude,
             dispatch.patientLng ?? _gwaliorCenter.longitude)
         : LatLng(dispatch.hospitalLat ?? _gwaliorCenter.latitude,
@@ -121,8 +121,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final dispatch = ref.read(dispatchProvider).activeDispatch;
     if (dispatch == null) return;
 
-    final isPickup = dispatch.status == DispatchStatus.assigned;
-    final dest = isPickup
+    // Route to patient only when assigned; all other statuses route to hospital
+    final toPatient = dispatch.status == DispatchStatus.assigned;
+    final dest = toPatient
         ? LatLng(dispatch.patientLat ?? _gwaliorCenter.latitude,
             dispatch.patientLng ?? _gwaliorCenter.longitude)
         : LatLng(dispatch.hospitalLat ?? _gwaliorCenter.latitude,
@@ -211,15 +212,15 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final dispatchState = ref.read(dispatchProvider);
     if (dispatchState.activeDispatch == null || _driverPos == null) return;
     final dispatch = dispatchState.activeDispatch!;
-    final isPickup = dispatch.status == DispatchStatus.assigned;
-    final dest = isPickup
+    final toPatient = dispatch.status == DispatchStatus.assigned;
+    final dest = toPatient
         ? LatLng(dispatch.patientLat ?? _gwaliorCenter.latitude,
             dispatch.patientLng ?? _gwaliorCenter.longitude)
         : LatLng(dispatch.hospitalLat ?? _gwaliorCenter.latitude,
             dispatch.hospitalLng ?? _gwaliorCenter.longitude);
     final dist = LocationService.distanceKm(_driverPos!, dest);
     _ttsService.announcePhase(
-      isPickup ? DispatchPhase.toPatient : DispatchPhase.toHospital,
+      toPatient ? DispatchPhase.toPatient : DispatchPhase.toHospital,
       dispatchState.hospitalName ?? 'Hospital',
       dist,
     );
@@ -269,6 +270,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
              _updateMetricsBaseline();
              _fetchRoute(doAutoPan: true);
          });
+      } else if (dispatch.status == DispatchStatus.arrived &&
+          dispatch.hospitalLat != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _fetchRoute(doAutoPan: true);
+          _ttsService.speak(
+              'Patient reached. Fetching route to ${dispatchState.hospitalName ?? 'hospital'}.');
+        });
       } else if (dispatch.status == DispatchStatus.pickedUp &&
           dispatch.hospitalLat != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -290,7 +298,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             : _gwaliorCenter;
 
     final isPickup = dispatch?.status == DispatchStatus.assigned;
+    final isArrived = dispatch?.status == DispatchStatus.arrived;
     final isPickedUp = dispatch?.status == DispatchStatus.pickedUp;
+    final toHospital = isArrived || isPickedUp;
     final withinReach = _distToPatientM <= _reachThresholdM;
 
     final distLabel = _routeDistKm > 0
@@ -327,17 +337,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               // Route polylines with enhanced visualization
               if (_routePoints.length >= 2)
                 PolylineLayer(polylines: [
-                  // Main route
                   Polyline(
                     points: _routePoints,
-                    color: isPickup
-                        ? AppColors.emergencyBlue
-                        : AppColors.success,
+                    color: toHospital ? AppColors.success : AppColors.emergencyBlue,
                     strokeWidth: 6,
                     borderColor: Colors.white.withValues(alpha: 0.8),
                     borderStrokeWidth: 2,
                   ),
-                  // Alternate route (if available and enabled)
                   if (_showAlternateRoute && _alternateRoute.length >= 2)
                     Polyline(
                       points: _alternateRoute,
@@ -483,8 +489,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               _mapFab(Icons.navigation, () {
                 final dispatch = ref.read(dispatchProvider).activeDispatch;
                 if (dispatch != null && _driverPos != null) {
-                  final isPickup = dispatch.status == DispatchStatus.assigned;
-                  final dest = isPickup
+                  final toPatient = dispatch.status == DispatchStatus.assigned;
+                  final dest = toPatient
                       ? LatLng(dispatch.patientLat ?? _gwaliorCenter.latitude,
                           dispatch.patientLng ?? _gwaliorCenter.longitude)
                       : LatLng(dispatch.hospitalLat ?? _gwaliorCenter.latitude,
@@ -545,25 +551,17 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                       ),
                       child: Row(children: [
                         Icon(
-                          isPickup
-                              ? Icons.directions_run
-                              : Icons.local_hospital,
-                          color: isPickup
-                              ? AppColors.emergencyBlue
-                              : AppColors.success,
+                          toHospital ? Icons.local_hospital : Icons.directions_run,
+                          color: toHospital ? AppColors.success : AppColors.emergencyBlue,
                           size: 16,
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          isPickup
-                              ? 'HEADING TO PATIENT'
-                              : isPickedUp
-                                  ? 'EN ROUTE TO HOSPITAL'
-                                  : 'HEADING TO HOSPITAL',
+                          toHospital
+                              ? 'EN ROUTE TO HOSPITAL'
+                              : 'HEADING TO PATIENT',
                           style: TextStyle(
-                            color: isPickup
-                                ? AppColors.emergencyBlue
-                                : AppColors.success,
+                            color: toHospital ? AppColors.success : AppColors.emergencyBlue,
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 1,
@@ -638,48 +636,35 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                       height: 52,
                       child: isPickup
                           ? ElevatedButton(
-                              onPressed: withinReach
-                                  ? () => ref
-                                      .read(dispatchProvider.notifier)
-                                      .confirmReach()
-                                  : null,
+                              onPressed: () async {
+                                await ref.read(dispatchProvider.notifier).confirmReach();
+                                // Immediately fetch hospital route after confirming reach
+                                await _fetchRoute(doAutoPan: true);
+                                _ttsService.speak(
+                                    'Patient reached. Navigating to ${dispatchState.hospitalName ?? 'hospital'}.');
+                              },
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: withinReach
-                                    ? AppColors.warning
-                                    : AppColors.cardElevated,
+                                backgroundColor: withinReach ? AppColors.warning : AppColors.primary,
                                 foregroundColor: Colors.white,
-                                disabledBackgroundColor:
-                                    AppColors.cardElevated,
-                                disabledForegroundColor: AppColors.textMuted,
                               ),
                               child: Text(
                                 withinReach
-                                    ? 'CONFIRM REACH  •  ${_distToPatientM.toInt()}m'
+                                    ? 'PATIENT SECURED · NAVIGATE TO HOSPITAL'
                                     : _distToPatientM.isInfinite
                                         ? 'LOCATING PATIENT...'
-                                        : 'APPROACHING  •  ${_distToPatientM.toInt()}m away',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.5),
+                                        : 'APPROACHING · ${_distToPatientM.toInt()}m away',
+                                style: const TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
                               ),
                             )
                           : ElevatedButton(
-                              onPressed: () => ref
-                                  .read(dispatchProvider.notifier)
-                                  .confirmPickup(),
+                              onPressed: () => ref.read(dispatchProvider.notifier).confirmPickup(),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: isPickedUp
-                                    ? AppColors.success
-                                    : AppColors.primary,
+                                backgroundColor: AppColors.success,
                                 foregroundColor: Colors.white,
                               ),
-                              child: Text(
-                                isPickedUp
-                                    ? 'CONFIRM PICKUP & HEAD TO HOSPITAL'
-                                    : 'ARRIVED AT HOSPITAL',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.5),
+                              child: const Text(
+                                'CONFIRM DROPOFF AT HOSPITAL',
+                                style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
                               ),
                             ),
                     ),

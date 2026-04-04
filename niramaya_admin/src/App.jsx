@@ -7,7 +7,7 @@ export default function App() {
 
   const checkBackend = useCallback(async () => {
     try {
-      const res = await fetch('/v1/audit/trail', { signal: AbortSignal.timeout(4000) })
+      const res = await fetch('/v1/audit/trail', { signal: AbortSignal.timeout(4000), headers: { 'ngrok-skip-browser-warning': 'true' } })
       setIsOnline(res.ok)
     } catch {
       setIsOnline(false)

@@ -20,6 +20,7 @@ export default function AuditTrail() {
       setBridgeOffline(false)
       const res = await fetch('/v1/audit/trail', {
         signal: AbortSignal.timeout(8000),
+        headers: { 'ngrok-skip-browser-warning': 'true' },
       })
       const data = await res.json()
 
@@ -146,7 +147,7 @@ export default function AuditTrail() {
             <strong>Connection Error</strong>
             <p>{error}</p>
             <p className="alert-hint">
-              Ensure the Niramaya Go engine is running on <code>192.168.1.35:10000</code> and
+              Ensure the Niramaya Go engine is running on <code>localhost:10000</code> and
               set <code>BLOCKCHAIN_RPC_URL</code> + <code>CONTRACT_ADDRESS</code> env vars.
             </p>
           </div>
@@ -160,7 +161,7 @@ export default function AuditTrail() {
             <strong>Waiting for Backend Engine...</strong>
             <p>
               The Go engine or blockchain bridge is not ready yet. Keep the backend running on{' '}
-              <code>192.168.1.35:10000</code> and start Hardhat RPC when needed.
+              <code>localhost:10000</code> and start Hardhat RPC when needed.
             </p>
           </div>
         </div>
@@ -173,7 +174,7 @@ export default function AuditTrail() {
             <strong>Niramaya Bridge Offline</strong>
             <p>
               Unable to reach <code>/v1/audit/trail</code>. Verify the Go engine is running on{' '}
-              <code>192.168.1.35:10000</code>.
+              <code>localhost:10000</code>.
             </p>
           </div>
         </div>

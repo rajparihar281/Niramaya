@@ -35,6 +35,8 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
   bool _isAutoTracking = true;
   bool _isSatellite = false;
   Timer? _routeTimer;
+  // Set to true after pickup confirmed — locks route to hospital
+  bool _pickupConfirmed = false;
 
   @override
   void initState() {
@@ -74,6 +76,40 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
     _routeTimer?.cancel();
     _mapController.dispose();
     super.dispose();
+  }
+
+  /// Called when driver taps "Patient Secured · Navigate to Hospital".
+  /// Fetches the OSRM route to hospital, shows it on map, then updates status.
+  Future<void> _confirmPickupAndRouteToHospital(DispatchUpdate dispatch) async {
+    if (_currentPos == null) return;
+    final hospitalPos = dispatch.hospitalLat != null
+        ? LatLng(dispatch.hospitalLat!, dispatch.hospitalLng!)
+        : null;
+    if (hospitalPos == null) {
+      await _updateStatus('en_route_hospital');
+      return;
+    }
+    // Fetch hospital route immediately
+    final r = await ref.read(osrmServiceProvider).getRoute(_currentPos!, hospitalPos);
+    if (r != null && mounted) {
+      setState(() {
+        _route = r.polyline;
+        _distanceMeters = r.distanceTotal;
+        _etaSeconds = r.durationTotal;
+        _pickupConfirmed = true;
+      });
+      ref.read(voiceNavigationProvider).updateRouteSteps(r.steps);
+      // Fit map to show driver + hospital
+      try {
+        _mapController.fitCamera(
+          CameraFit.bounds(
+            bounds: LatLngBounds.fromPoints([_currentPos!, hospitalPos]),
+            padding: const EdgeInsets.all(80),
+          ),
+        );
+      } catch (_) {}
+    }
+    await _updateStatus('en_route_hospital');
   }
 
   void _fetchRoute(DispatchUpdate dispatch, LatLng? target) {
@@ -132,7 +168,7 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
           LatLng? target;
           Color routeColor = AppColors.primary;
 
-          if (['assigned', 'en_route_pickup', 'arrived_pickup'].contains(dispatch.status)) {
+          if (['assigned', 'en_route_pickup', 'arrived_pickup'].contains(dispatch.status) && !_pickupConfirmed) {
             if (dispatch.patientLat != null) {
               target = LatLng(dispatch.patientLat!, dispatch.patientLng!);
             }
@@ -254,7 +290,7 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
                 left: 0, right: 0, bottom: 0,
                 child: IntakePanel(
                   dispatch: dispatch,
-                  onConfirmPickup: () => _updateStatus('en_route_hospital'),
+                  onConfirmPickup: () => _confirmPickupAndRouteToHospital(dispatch),
                   onConfirmDropoff: () => _updateStatus('completed'),
                 ),
               ),
