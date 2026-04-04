@@ -11,6 +11,9 @@ import AlertSystem from './gov/AlertSystem';
 import ForecastChart from './gov/ForecastChart';
 import AmbulanceLayer from './gov/AmbulanceLayer';
 import MCIPanel from './gov/MCIPanel';
+import AnimatedCounter from './gov/AnimatedCounter';
+import Sparkline from './gov/Sparkline';
+import LiveClock from './gov/LiveClock';
 import 'leaflet/dist/leaflet.css';
 import { api } from '../api';
 
@@ -68,6 +71,7 @@ const GovDashboard = () => {
   const [mciActive, setMciActive] = useState(false);
   const [ambulances, setAmbulances] = useState([]);
   const [flyTarget, setFlyTarget] = useState(null);
+  const [trendCache, setTrendCache] = useState({}); // { symptom_type: [val, val, ...] }
 
   const handleAmbulanceUpdate = useCallback((ambs) => {
     setAmbulances(ambs);
@@ -81,10 +85,29 @@ const GovDashboard = () => {
     setLoading(true);
     setError(null);
     try {
-      const result = await api.predictOutbreak();
+      const [result, trendRes] = await Promise.all([
+        api.predictOutbreak(),
+        api.symptomTrends(7),
+      ]);
       setPrevData(data); // Store previous for alert diff
       setData(result);
       setLastRefresh(new Date());
+
+      // Build sparkline data per symptom type from 7-day trends
+      if (trendRes.trends?.length) {
+        const bySymptom = {};
+        trendRes.trends.forEach(t => {
+          if (!bySymptom[t.symptom_type]) bySymptom[t.symptom_type] = {};
+          bySymptom[t.symptom_type][t.date] = (bySymptom[t.symptom_type][t.date] || 0) + t.count;
+        });
+        const cache = {};
+        Object.entries(bySymptom).forEach(([sym, dateMap]) => {
+          cache[sym] = Object.entries(dateMap)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([, v]) => v);
+        });
+        setTrendCache(cache);
+      }
     } catch (err) {
       setError(err.message);
     }
@@ -144,6 +167,7 @@ const GovDashboard = () => {
         <div className="flex items-center gap-2">
           <Siren color="#3B82F6" size={18} />
           <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, letterSpacing: '-0.01em' }}>Government Surveillance Dashboard</h2>
+          <LiveClock />
         </div>
         <div className="flex items-center gap-4">
           {lastRefresh && (
@@ -313,18 +337,18 @@ const GovDashboard = () => {
               </div>
               <div className="gov-stat">
                 <div className="stat-label">Districts</div>
-                <div className="gov-stat-value">{data.analyzed_districts}</div>
+                <div className="gov-stat-value"><AnimatedCounter value={data.analyzed_districts} /></div>
               </div>
               <div className={`gov-stat ${anomalyCount > 0 ? 'gov-stat-danger' : ''}`}>
                 <div className="stat-label">Anomalies</div>
                 <div className="gov-stat-value" style={{ color: anomalyCount > 0 ? 'var(--accent-danger)' : 'var(--accent-success)' }}>
-                  {anomalyCount}
+                  <AnimatedCounter value={anomalyCount} />
                 </div>
               </div>
               {surgeCount > 0 && (
                 <div className="gov-stat gov-stat-danger">
                   <div className="stat-label">🚨 Surges</div>
-                  <div className="gov-stat-value" style={{ color: 'var(--accent-danger)' }}>{surgeCount}</div>
+                  <div className="gov-stat-value" style={{ color: 'var(--accent-danger)' }}><AnimatedCounter value={surgeCount} /></div>
                 </div>
               )}
             </div>
@@ -343,13 +367,23 @@ const GovDashboard = () => {
                         <span className="gov-severity-tag" style={{ background: style.color }}>{outbreak.severity}</span>
                         {outbreak.surge_alert_triggered && <span style={{ color: 'var(--accent-danger)', fontSize: '0.75rem', fontWeight: 600 }}>🚨 SURGE</span>}
                       </div>
-                      <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{outbreak.indicator}</div>
+                      <div className="flex justify-between items-center">
+                        <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{outbreak.indicator}</div>
+                        {trendCache[outbreak.indicator] && (
+                          <Sparkline
+                            data={trendCache[outbreak.indicator]}
+                            width={72}
+                            height={22}
+                            color={style.color}
+                          />
+                        )}
+                      </div>
                       <div className="flex justify-between" style={{ marginTop: '0.4rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                         <span className="flex items-center gap-2"><MapPin size={12} /> {outbreak.district}</span>
-                        <span className="flex items-center gap-2"><TrendingUp size={12} /> +{outbreak.spike_percentage.toFixed(0)}%</span>
+                        <span className="flex items-center gap-2"><TrendingUp size={12} /> +<AnimatedCounter value={parseFloat(outbreak.spike_percentage.toFixed(0))} />%</span>
                       </div>
                       <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                        Confidence: <strong style={{ color: outbreak.ml_confidence >= 0.8 ? 'var(--accent-danger)' : 'var(--accent-warning)' }}>{(outbreak.ml_confidence * 100).toFixed(0)}%</strong>
+                        Confidence: <strong style={{ color: outbreak.ml_confidence >= 0.8 ? 'var(--accent-danger)' : 'var(--accent-warning)' }}><AnimatedCounter value={parseFloat((outbreak.ml_confidence * 100).toFixed(0))} />%</strong>
                         {' · '}Avg: {outbreak.recent_daily_avg}/day vs {outbreak.baseline_daily_avg}/day
                       </div>
                     </div>
