@@ -70,6 +70,11 @@ const AmbulanceLayer = ({ ambulances = [], active = false }) => {
           </div>
         `);
 
+        // Click to zoom in
+        marker.on('click', () => {
+          map.flyTo([amb.lat, amb.lng], 16, { duration: 0.8 });
+        });
+
         markersRef.current[amb.id] = marker;
       }
     });

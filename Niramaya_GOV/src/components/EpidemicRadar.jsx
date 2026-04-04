@@ -32,15 +32,28 @@ const AMBIENT_POINTS = [
   [28.6180, 77.2280, 0.08],
 ];
 
-// Auto-fit map bounds
+// Auto-fit map bounds — only on first data load
 const FitBounds = ({ outbreaks }) => {
   const map = useMap();
+  const hasFitted = useRef(false);
   useEffect(() => {
-    if (outbreaks && outbreaks.length > 0) {
+    if (!hasFitted.current && outbreaks && outbreaks.length > 0) {
       const bounds = outbreaks.map(o => [o.location.lat, o.location.lng]);
       map.fitBounds(bounds, { padding: [60, 60], maxZoom: 13 });
+      hasFitted.current = true;
     }
   }, [outbreaks, map]);
+  return null;
+};
+
+// Fly to a specific target when triggered
+const FlyToTarget = ({ target }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (target) {
+      map.flyTo([target.lat, target.lng], target.zoom || 15, { duration: 0.8 });
+    }
+  }, [target, map]);
   return null;
 };
 
@@ -54,10 +67,15 @@ const GovDashboard = () => {
   const [viewMode, setViewMode] = useState('heatmap'); // 'heatmap' | 'markers'
   const [mciActive, setMciActive] = useState(false);
   const [ambulances, setAmbulances] = useState([]);
+  const [flyTarget, setFlyTarget] = useState(null);
 
   const handleAmbulanceUpdate = useCallback((ambs) => {
     setAmbulances(ambs);
   }, []);
+
+  const handleZoomToOutbreak = (outbreak) => {
+    setFlyTarget({ lat: outbreak.location.lat, lng: outbreak.location.lng, zoom: 15 });
+  };
 
   const fetchOutbreaks = async () => {
     setLoading(true);
@@ -198,6 +216,7 @@ const GovDashboard = () => {
                 />
 
                 {data.outbreaks?.length > 0 && <FitBounds outbreaks={data.outbreaks} />}
+                <FlyToTarget target={flyTarget} />
 
                 {viewMode === 'heatmap' && (
                   <HeatmapLayer
@@ -209,6 +228,24 @@ const GovDashboard = () => {
                     }}
                   />
                 )}
+
+                {/* Heatmap mode: invisible click targets on outbreak locations for zoom */}
+                {viewMode === 'heatmap' && data.outbreaks?.map((outbreak, i) => (
+                  <CircleMarker
+                    key={`heat-click-${i}`}
+                    center={[outbreak.location.lat, outbreak.location.lng]}
+                    radius={getMarkerRadius(outbreak.spike_percentage) + 10}
+                    pathOptions={{ color: 'transparent', fillColor: 'transparent', fillOpacity: 0, weight: 0 }}
+                    eventHandlers={{ click: () => handleZoomToOutbreak(outbreak) }}
+                  >
+                    <Popup className="epidemic-popup">
+                      <div style={{ minWidth: '180px' }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: '0.2rem' }}>{outbreak.district}</div>
+                        <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{outbreak.indicator} — +{outbreak.spike_percentage.toFixed(0)}%</div>
+                      </div>
+                    </Popup>
+                  </CircleMarker>
+                ))}
 
                 {viewMode === 'markers' && data.outbreaks?.map((outbreak, i) => {
                   const style = severityStyle(outbreak.severity);
@@ -225,7 +262,12 @@ const GovDashboard = () => {
                         center={[outbreak.location.lat, outbreak.location.lng]}
                         radius={radius}
                         pathOptions={{ color: style.mapColor, fillColor: style.fill, fillOpacity: 0.6, weight: 2 }}
-                        eventHandlers={{ click: () => setSelectedOutbreak(i) }}
+                        eventHandlers={{
+                          click: () => {
+                            setSelectedOutbreak(i);
+                            handleZoomToOutbreak(outbreak);
+                          }
+                        }}
                       >
                         <Popup className="epidemic-popup">
                           <div style={{ minWidth: '200px' }}>
@@ -295,7 +337,7 @@ const GovDashboard = () => {
                     <div key={i}
                       className={`gov-outbreak-card ${selectedOutbreak === i ? 'outbreak-card-selected' : ''}`}
                       style={{ borderLeftColor: style.color }}
-                      onClick={() => setSelectedOutbreak(i)}
+                      onClick={() => { setSelectedOutbreak(i); handleZoomToOutbreak(outbreak); }}
                     >
                       <div className="flex justify-between items-center" style={{ marginBottom: '0.4rem' }}>
                         <span className="gov-severity-tag" style={{ background: style.color }}>{outbreak.severity}</span>
