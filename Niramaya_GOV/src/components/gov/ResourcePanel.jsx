@@ -60,7 +60,7 @@ const ResourcePanel = () => {
             <div className="flex justify-between items-center" style={{ marginBottom: '0.4rem' }}>
               <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
                 <Heart size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom', color: utilColor(overallUtil) }} />
-                Overall Capacity
+                Overall Utilization
               </span>
               <span style={{ fontWeight: 700, color: utilColor(overallUtil) }}>
                 {(overallUtil * 100).toFixed(0)}%

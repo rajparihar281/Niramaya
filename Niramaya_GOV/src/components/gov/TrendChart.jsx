@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { TrendingUp, RefreshCw, AlertTriangle, GitCompare } from 'lucide-react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ComposedChart, Line, Bar,
+  Tooltip, Legend, ComposedChart, Line,
 } from 'recharts';
 import { api } from '../../api';
 
-// Tactical palette: blues/grays for historical, red/amber for critical indicators
+const MAX_LINES = 5; // Only show the top N most active items
+
+// Tactical palette
 const SYMPTOM_COLORS = {
   'Fever': '#DC2626',
   'Cough': '#64748B',
@@ -17,6 +19,7 @@ const SYMPTOM_COLORS = {
   'Fatigue': '#9CA3AF',
   'Nausea': '#D97706',
   'Respiratory Distress': '#EF4444',
+  'Severe Dehydration': '#0EA5E9',
 };
 
 const PHARMA_COLORS = {
@@ -27,7 +30,8 @@ const PHARMA_COLORS = {
   'General Antibiotic': '#D97706',
 };
 
-// Correlation pairs: which pharma product maps to which symptom
+const ORDERED_COLORS = ['#DC2626', '#D97706', '#3B82F6', '#64748B', '#0EA5E9'];
+
 const CORRELATION_PAIRS = [
   { symptom: 'Fever', pharma: 'Paracetamol', color: '#DC2626', pharmaColor: '#F87171' },
   { symptom: 'Cough', pharma: 'Cough Syrup', color: '#64748B', pharmaColor: '#94A3B8' },
@@ -42,12 +46,47 @@ const TIME_RANGES = [
   { label: '90D', days: 90 },
 ];
 
-const fallbackColor = (name, palette) => {
+const fallbackColor = (name, palette, index) => {
   if (palette[name]) return palette[name];
-  const hash = [...name].reduce((a, c) => a + c.charCodeAt(0), 0);
-  const hues = [210, 215, 220, 225, 230];
-  const hue = hues[hash % hues.length];
-  return `hsl(${hue}, 20%, ${45 + (hash % 20)}%)`;
+  return ORDERED_COLORS[index % ORDERED_COLORS.length];
+};
+
+// Fill missing dates with 0s so lines are continuous
+const fillDateGaps = (data, keys) => {
+  if (!data.length) return data;
+  const dates = data.map(d => d.date).sort();
+  const start = new Date(dates[0]);
+  const end = new Date(dates[dates.length - 1]);
+  const dateMap = {};
+  data.forEach(d => { dateMap[d.date] = d; });
+
+  const filled = [];
+  for (let dt = new Date(start); dt <= end; dt.setDate(dt.getDate() + 1)) {
+    const ds = dt.toISOString().split('T')[0];
+    if (dateMap[ds]) {
+      // Ensure all keys exist
+      const row = { ...dateMap[ds] };
+      keys.forEach(k => { if (row[k] === undefined) row[k] = 0; });
+      filled.push(row);
+    } else {
+      const row = { date: ds };
+      keys.forEach(k => { row[k] = 0; });
+      filled.push(row);
+    }
+  }
+  return filled;
+};
+
+// Pick the top N items by total volume
+const pickTopKeys = (data, allKeys, n) => {
+  const totals = {};
+  allKeys.forEach(k => { totals[k] = 0; });
+  data.forEach(row => {
+    allKeys.forEach(k => { totals[k] += (row[k] || 0); });
+  });
+  return allKeys
+    .sort((a, b) => totals[b] - totals[a])
+    .slice(0, n);
 };
 
 const CustomTooltip = ({ active, payload, label }) => {
@@ -81,10 +120,7 @@ const CorrelationTooltip = ({ active, payload, label }) => {
       {payload.map((p, i) => (
         <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-            <span style={{
-              width: 6, height: 6, borderRadius: '50%',
-              background: p.color, display: 'inline-block',
-            }} />
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.color, display: 'inline-block' }} />
             <span style={{ fontFamily: 'Inter, sans-serif', color: p.color }}>{p.name}</span>
           </span>
           <strong style={{ color: p.color }}>{p.value}</strong>
@@ -101,7 +137,7 @@ const TrendChart = ({ days: initialDays = 14 }) => {
   const [pharmaKeys, setPharmaKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('symptoms'); // 'symptoms' | 'pharma' | 'correlation'
+  const [activeTab, setActiveTab] = useState('symptoms');
   const [days, setDays] = useState(initialDays);
   const [correlationData, setCorrelationData] = useState([]);
 
@@ -116,35 +152,43 @@ const TrendChart = ({ days: initialDays = 14 }) => {
 
       // Pivot symptom trends
       const symDateMap = {};
-      const symKeys = new Set();
+      const allSymKeys = new Set();
       if (symRes.trends?.length) {
         symRes.trends.forEach(t => {
           if (!symDateMap[t.date]) symDateMap[t.date] = { date: t.date };
           symDateMap[t.date][t.symptom_type] = (symDateMap[t.date][t.symptom_type] || 0) + t.count;
-          symKeys.add(t.symptom_type);
+          allSymKeys.add(t.symptom_type);
         });
-        setSymptomData(Object.values(symDateMap).sort((a, b) => a.date.localeCompare(b.date)));
-        setSymptomKeys([...symKeys]);
+        const rawData = Object.values(symDateMap).sort((a, b) => a.date.localeCompare(b.date));
+        const allKeys = [...allSymKeys];
+        const topKeys = pickTopKeys(rawData, allKeys, MAX_LINES);
+        const filledData = fillDateGaps(rawData, topKeys);
+        setSymptomData(filledData);
+        setSymptomKeys(topKeys);
       } else {
         setSymptomData([]); setSymptomKeys([]);
       }
 
       // Pivot pharma trends
       const pharDateMap = {};
-      const pharKeys = new Set();
+      const allPharKeys = new Set();
       if (pharRes.trends?.length) {
         pharRes.trends.forEach(t => {
           if (!pharDateMap[t.date]) pharDateMap[t.date] = { date: t.date };
           pharDateMap[t.date][t.medicine_name] = (pharDateMap[t.date][t.medicine_name] || 0) + t.count;
-          pharKeys.add(t.medicine_name);
+          allPharKeys.add(t.medicine_name);
         });
-        setPharmaData(Object.values(pharDateMap).sort((a, b) => a.date.localeCompare(b.date)));
-        setPharmaKeys([...pharKeys]);
+        const rawData = Object.values(pharDateMap).sort((a, b) => a.date.localeCompare(b.date));
+        const allKeys = [...allPharKeys];
+        const topKeys = pickTopKeys(rawData, allKeys, MAX_LINES);
+        const filledData = fillDateGaps(rawData, topKeys);
+        setPharmaData(filledData);
+        setPharmaKeys(topKeys);
       } else {
         setPharmaData([]); setPharmaKeys([]);
       }
 
-      // Build correlation data: merge symptom + pharma by date
+      // Build correlation data
       if (symRes.trends?.length && pharRes.trends?.length) {
         const mergedMap = {};
         symRes.trends.forEach(t => {
@@ -155,7 +199,12 @@ const TrendChart = ({ days: initialDays = 14 }) => {
           if (!mergedMap[t.date]) mergedMap[t.date] = { date: t.date };
           mergedMap[t.date][`ph_${t.medicine_name}`] = (mergedMap[t.date][`ph_${t.medicine_name}`] || 0) + t.count;
         });
-        setCorrelationData(Object.values(mergedMap).sort((a, b) => a.date.localeCompare(b.date)));
+        const corrKeys = [];
+        CORRELATION_PAIRS.forEach(p => { corrKeys.push(`sym_${p.symptom}`, `ph_${p.pharma}`); });
+        setCorrelationData(fillDateGaps(
+          Object.values(mergedMap).sort((a, b) => a.date.localeCompare(b.date)),
+          corrKeys
+        ));
       } else {
         setCorrelationData([]);
       }
@@ -179,16 +228,17 @@ const TrendChart = ({ days: initialDays = 14 }) => {
         <YAxis tick={{ fill: '#64748B', fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }} />
         <Tooltip content={<CustomTooltip />} />
         <Legend wrapperStyle={{ fontSize: '0.65rem', color: '#64748B' }} />
-        {chartKeys.map(key => (
+        {chartKeys.map((key, idx) => (
           <Area
             key={key}
             type="monotone"
             dataKey={key}
-            stroke={fallbackColor(key, palette)}
+            stroke={fallbackColor(key, palette, idx)}
             fill="none"
             strokeWidth={1.5}
             dot={false}
-            activeDot={{ r: 2.5, stroke: fallbackColor(key, palette), strokeWidth: 1 }}
+            activeDot={{ r: 2.5, stroke: fallbackColor(key, palette, idx), strokeWidth: 1 }}
+            connectNulls={true}
           />
         ))}
       </AreaChart>
@@ -196,7 +246,6 @@ const TrendChart = ({ days: initialDays = 14 }) => {
   );
 
   const renderCorrelationChart = () => {
-    // Filter to pairs that exist in the data
     const activePairs = CORRELATION_PAIRS.filter(
       p => correlationData.some(d => d[`sym_${p.symptom}`] !== undefined || d[`ph_${p.pharma}`] !== undefined)
     );
@@ -204,7 +253,7 @@ const TrendChart = ({ days: initialDays = 14 }) => {
     if (!activePairs.length) {
       return (
         <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-          No correlation data available. Need both symptom and pharma data for the same period.
+          No correlation data available.
         </div>
       );
     }
@@ -232,38 +281,17 @@ const TrendChart = ({ days: initialDays = 14 }) => {
             <YAxis yAxisId="symptoms" tick={{ fill: '#64748B', fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }} />
             <YAxis yAxisId="pharma" orientation="right" tick={{ fill: '#475569', fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }} />
             <Tooltip content={<CorrelationTooltip />} />
-
             {activePairs.map(p => (
               <React.Fragment key={p.symptom}>
-                <Line
-                  yAxisId="symptoms"
-                  type="monotone"
-                  dataKey={`sym_${p.symptom}`}
-                  name={`📊 ${p.symptom}`}
-                  stroke={p.color}
-                  strokeWidth={1.5}
-                  dot={false}
-                  activeDot={{ r: 2.5 }}
-                />
-                <Line
-                  yAxisId="pharma"
-                  type="monotone"
-                  dataKey={`ph_${p.pharma}`}
-                  name={`💊 ${p.pharma}`}
-                  stroke={p.pharmaColor}
-                  strokeWidth={1.2}
-                  strokeDasharray="4 3"
-                  dot={false}
-                  activeDot={{ r: 2 }}
-                />
+                <Line yAxisId="symptoms" type="monotone" dataKey={`sym_${p.symptom}`} name={`📊 ${p.symptom}`}
+                  stroke={p.color} strokeWidth={1.5} dot={false} activeDot={{ r: 2.5 }} connectNulls={false} />
+                <Line yAxisId="pharma" type="monotone" dataKey={`ph_${p.pharma}`} name={`💊 ${p.pharma}`}
+                  stroke={p.pharmaColor} strokeWidth={1.2} strokeDasharray="4 3" dot={false} activeDot={{ r: 2 }} connectNulls={false} />
               </React.Fragment>
             ))}
           </ComposedChart>
         </ResponsiveContainer>
-        <div style={{
-          fontSize: '0.55rem', color: '#475569', marginTop: '0.3rem', textAlign: 'center',
-          fontFamily: "'JetBrains Mono', monospace",
-        }}>
+        <div style={{ fontSize: '0.55rem', color: '#475569', marginTop: '0.3rem', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace" }}>
           SOLID = SYMPTOM REPORTS (LEFT AXIS) · DASHED = PHARMA SALES (RIGHT AXIS)
         </div>
       </>
@@ -276,44 +304,23 @@ const TrendChart = ({ days: initialDays = 14 }) => {
         <div className="flex items-center gap-2">
           <TrendingUp size={14} color="#3B82F6" />
           <h4 style={{ margin: 0, fontSize: '0.85rem' }}>Epidemiological Trends</h4>
+          <span style={{ fontSize: '0.55rem', color: '#475569', fontFamily: "'JetBrains Mono', monospace" }}>TOP {MAX_LINES}</span>
         </div>
         <div className="flex gap-2 items-center">
-          {/* Time Range Selector */}
           <div className="time-range-selector">
             {TIME_RANGES.map(r => (
-              <button
-                key={r.days}
-                className={`time-range-btn ${days === r.days ? 'active' : ''}`}
-                onClick={() => setDays(r.days)}
-              >
-                {r.label}
-              </button>
+              <button key={r.days} className={`time-range-btn ${days === r.days ? 'active' : ''}`}
+                onClick={() => setDays(r.days)}>{r.label}</button>
             ))}
           </div>
-
           <div style={{ width: 1, height: 16, background: '#334155' }} />
-
-          {/* Tab Selector */}
-          <button
-            className={`btn btn-sm ${activeTab === 'symptoms' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setActiveTab('symptoms')}
-            style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem' }}
-          >
-            Symptoms
-          </button>
-          <button
-            className={`btn btn-sm ${activeTab === 'pharma' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setActiveTab('pharma')}
-            style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem' }}
-          >
-            Pharma
-          </button>
-          <button
-            className={`btn btn-sm ${activeTab === 'correlation' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setActiveTab('correlation')}
-            style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem' }}
-            title="Symptom ↔ Pharma Correlation"
-          >
+          <button className={`btn btn-sm ${activeTab === 'symptoms' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setActiveTab('symptoms')} style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem' }}>Symptoms</button>
+          <button className={`btn btn-sm ${activeTab === 'pharma' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setActiveTab('pharma')} style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem' }}>Pharma</button>
+          <button className={`btn btn-sm ${activeTab === 'correlation' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setActiveTab('correlation')} style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem' }}
+            title="Symptom ↔ Pharma Correlation">
             <GitCompare size={10} /> Correlate
           </button>
           <button className="btn btn-sm btn-outline" onClick={fetchData} disabled={loading}

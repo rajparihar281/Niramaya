@@ -3,7 +3,7 @@ import {
   Radio, AlertTriangle, RefreshCw, MapPin, TrendingUp,
   Shield, Activity, Bed, Siren, Eye
 } from 'lucide-react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip as LeafletTooltip, useMap } from 'react-leaflet';
 import HeatmapLayer from './gov/HeatmapLayer';
 import TrendChart from './gov/TrendChart';
 import ResourcePanel from './gov/ResourcePanel';
@@ -14,6 +14,8 @@ import MCIPanel from './gov/MCIPanel';
 import AnimatedCounter from './gov/AnimatedCounter';
 import Sparkline from './gov/Sparkline';
 import LiveClock from './gov/LiveClock';
+import ExportButton from './gov/ExportButton';
+import OutbreakDrawer from './gov/OutbreakDrawer';
 import 'leaflet/dist/leaflet.css';
 import { api } from '../api';
 
@@ -72,6 +74,7 @@ const GovDashboard = () => {
   const [ambulances, setAmbulances] = useState([]);
   const [flyTarget, setFlyTarget] = useState(null);
   const [trendCache, setTrendCache] = useState({}); // { symptom_type: [val, val, ...] }
+  const [detailOutbreak, setDetailOutbreak] = useState(null);
 
   const handleAmbulanceUpdate = useCallback((ambs) => {
     setAmbulances(ambs);
@@ -192,6 +195,7 @@ const GovDashboard = () => {
               <MapPin size={12} /> Markers
             </button>
           </div>
+          <ExportButton data={data} />
           <button className="btn btn-outline btn-sm" onClick={fetchOutbreaks} disabled={loading}
             style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem' }}>
             <RefreshCw size={12} className={loading ? 'spin' : ''} /> Refresh
@@ -253,21 +257,22 @@ const GovDashboard = () => {
                   />
                 )}
 
-                {/* Heatmap mode: invisible click targets on outbreak locations for zoom */}
+                {/* Heatmap mode: invisible click targets — hover shows tooltip, click zooms */}
                 {viewMode === 'heatmap' && data.outbreaks?.map((outbreak, i) => (
                   <CircleMarker
                     key={`heat-click-${i}`}
                     center={[outbreak.location.lat, outbreak.location.lng]}
                     radius={getMarkerRadius(outbreak.spike_percentage) + 10}
                     pathOptions={{ color: 'transparent', fillColor: 'transparent', fillOpacity: 0, weight: 0 }}
-                    eventHandlers={{ click: () => handleZoomToOutbreak(outbreak) }}
+                    eventHandlers={{
+                      click: () => { handleZoomToOutbreak(outbreak); setDetailOutbreak(outbreak); },
+                    }}
                   >
-                    <Popup className="epidemic-popup">
-                      <div style={{ minWidth: '180px' }}>
-                        <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: '0.2rem' }}>{outbreak.district}</div>
-                        <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{outbreak.indicator} — +{outbreak.spike_percentage.toFixed(0)}%</div>
-                      </div>
-                    </Popup>
+                    <LeafletTooltip direction="top" offset={[0, -10]} className="tactical-tooltip" permanent={false}>
+                      <div style={{ fontWeight: 700, fontSize: '0.8rem' }}>{outbreak.district}</div>
+                      <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{outbreak.indicator} — +{outbreak.spike_percentage.toFixed(0)}%</div>
+                      <div style={{ fontSize: '0.65rem', color: '#64748B' }}>Confidence: {(outbreak.ml_confidence * 100).toFixed(0)}%</div>
+                    </LeafletTooltip>
                   </CircleMarker>
                 ))}
 
@@ -290,24 +295,21 @@ const GovDashboard = () => {
                           click: () => {
                             setSelectedOutbreak(i);
                             handleZoomToOutbreak(outbreak);
+                            setDetailOutbreak(outbreak);
                           }
                         }}
                       >
-                        <Popup className="epidemic-popup">
-                          <div style={{ minWidth: '200px' }}>
-                            <div style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '0.25rem' }}>{outbreak.district}</div>
-                            <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '0.5rem' }}>{outbreak.type} — {outbreak.indicator}</div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.25rem' }}>
-                              <span>Spike:</span><strong style={{ color: style.mapColor }}>+{outbreak.spike_percentage.toFixed(0)}%</strong>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.25rem' }}>
-                              <span>Confidence:</span><strong>{(outbreak.ml_confidence * 100).toFixed(0)}%</strong>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                              <span>Recent Avg:</span><strong>{outbreak.recent_daily_avg}/day</strong>
-                            </div>
+                        <LeafletTooltip direction="top" offset={[0, -10]} className="tactical-tooltip" permanent={false}>
+                          <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: '0.15rem' }}>{outbreak.district}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.3rem' }}>{outbreak.type} — {outbreak.indicator}</div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', gap: '0.5rem' }}>
+                            <span>Spike: <strong style={{ color: style.mapColor }}>+{outbreak.spike_percentage.toFixed(0)}%</strong></span>
+                            <span>Conf: <strong>{(outbreak.ml_confidence * 100).toFixed(0)}%</strong></span>
                           </div>
-                        </Popup>
+                          <div style={{ fontSize: '0.7rem', marginTop: '0.15rem' }}>
+                            Avg: {outbreak.recent_daily_avg}/day vs {outbreak.baseline_daily_avg}/day
+                          </div>
+                        </LeafletTooltip>
                       </CircleMarker>
                     </React.Fragment>
                   );
@@ -361,7 +363,7 @@ const GovDashboard = () => {
                     <div key={i}
                       className={`gov-outbreak-card ${selectedOutbreak === i ? 'outbreak-card-selected' : ''}`}
                       style={{ borderLeftColor: style.color }}
-                      onClick={() => { setSelectedOutbreak(i); handleZoomToOutbreak(outbreak); }}
+                      onClick={() => { setSelectedOutbreak(i); handleZoomToOutbreak(outbreak); setDetailOutbreak(outbreak); }}
                     >
                       <div className="flex justify-between items-center" style={{ marginBottom: '0.4rem' }}>
                         <span className="gov-severity-tag" style={{ background: style.color }}>{outbreak.severity}</span>
@@ -411,6 +413,11 @@ const GovDashboard = () => {
         {/* ── 7-Day Forecast ── */}
         <ForecastChart />
         </>
+      )}
+
+      {/* Outbreak Detail Drawer */}
+      {detailOutbreak && (
+        <OutbreakDrawer outbreak={detailOutbreak} onClose={() => setDetailOutbreak(null)} />
       )}
     </div>
   );

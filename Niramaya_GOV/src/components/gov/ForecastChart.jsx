@@ -6,13 +6,8 @@ import {
 } from 'recharts';
 import { api } from '../../api';
 
-/**
- * ForecastChart — fetches 14 days of symptom data, then extrapolates
- * a 7-day linear trend forecast per symptom type.
- */
-
-// Tactical palette: critical indicators in red/amber, rest in steel blues
-const FORECAST_COLORS = ['#DC2626', '#D97706', '#64748B', '#3B82F6', '#475569', '#94A3B8', '#6B7280'];
+const MAX_LINES = 5;
+const FORECAST_COLORS = ['#DC2626', '#D97706', '#3B82F6', '#64748B', '#0EA5E9'];
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
@@ -36,6 +31,41 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
+// Pick top N items by total volume
+const pickTopKeys = (data, allKeys, n) => {
+  const totals = {};
+  allKeys.forEach(k => { totals[k] = 0; });
+  data.forEach(row => {
+    allKeys.forEach(k => { totals[k] += (row[k] || 0); });
+  });
+  return allKeys.sort((a, b) => totals[b] - totals[a]).slice(0, n);
+};
+
+// Fill missing dates with 0s
+const fillDateGaps = (data, keys) => {
+  if (!data.length) return data;
+  const dates = data.map(d => d.date).sort();
+  const start = new Date(dates[0]);
+  const end = new Date(dates[dates.length - 1]);
+  const dateMap = {};
+  data.forEach(d => { dateMap[d.date] = d; });
+
+  const filled = [];
+  for (let dt = new Date(start); dt <= end; dt.setDate(dt.getDate() + 1)) {
+    const ds = dt.toISOString().split('T')[0];
+    if (dateMap[ds]) {
+      const row = { ...dateMap[ds] };
+      keys.forEach(k => { if (row[k] === undefined) row[k] = 0; });
+      filled.push(row);
+    } else {
+      const row = { date: ds, _forecast: false };
+      keys.forEach(k => { row[k] = 0; });
+      filled.push(row);
+    }
+  }
+  return filled;
+};
+
 const ForecastChart = () => {
   const [chartData, setChartData] = useState([]);
   const [symptomKeys, setSymptomKeys] = useState([]);
@@ -56,24 +86,31 @@ const ForecastChart = () => {
       }
 
       const dateMap = {};
-      const keys = new Set();
+      const allKeys = new Set();
       res.trends.forEach(t => {
         if (!dateMap[t.date]) dateMap[t.date] = { date: t.date, _forecast: false };
         dateMap[t.date][t.symptom_type] = (dateMap[t.date][t.symptom_type] || 0) + t.count;
-        keys.add(t.symptom_type);
+        allKeys.add(t.symptom_type);
       });
 
-      const sortedDates = Object.values(dateMap).sort((a, b) => a.date.localeCompare(b.date));
-      const symptomList = [...keys];
-      setSymptomKeys(symptomList);
+      const rawDates = Object.values(dateMap).sort((a, b) => a.date.localeCompare(b.date));
+      const allKeysList = [...allKeys];
 
+      // Pick only Top N symptoms by total volume
+      const topKeys = pickTopKeys(rawDates, allKeysList, MAX_LINES);
+      setSymptomKeys(topKeys);
+
+      // Fill date gaps for continuous lines
+      const sortedDates = fillDateGaps(rawDates, topKeys);
+
+      // Linear regression forecast
       const forecastDays = 7;
       const recentDays = Math.min(sortedDates.length, 14);
       const recentData = sortedDates.slice(-recentDays);
 
       const slopes = {};
       const intercepts = {};
-      symptomList.forEach(sym => {
+      topKeys.forEach(sym => {
         const ys = recentData.map(d => d[sym] || 0);
         const n = ys.length;
         if (n < 2) { slopes[sym] = 0; intercepts[sym] = ys[0] || 0; return; }
@@ -102,7 +139,7 @@ const ForecastChart = () => {
         const dateStr = fDate.toISOString().split('T')[0];
         const point = { date: dateStr, _forecast: true };
 
-        symptomList.forEach(sym => {
+        topKeys.forEach(sym => {
           const predicted = intercepts[sym] + slopes[sym] * i;
           point[sym] = Math.max(0, Math.round(predicted));
         });
@@ -126,6 +163,7 @@ const ForecastChart = () => {
           <Calendar size={14} color="#D97706" />
           <h4 style={{ margin: 0, fontSize: '0.85rem' }}>7-Day Epidemic Forecast</h4>
           <span className="forecast-badge">AI PROJECTION</span>
+          <span style={{ fontSize: '0.55rem', color: '#475569', fontFamily: "'JetBrains Mono', monospace" }}>TOP {MAX_LINES}</span>
         </div>
         <button className="btn btn-sm btn-outline" onClick={fetchAndForecast} disabled={loading}
           style={{ padding: '0.25rem 0.4rem' }}>
@@ -154,43 +192,24 @@ const ForecastChart = () => {
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="2 2" stroke="rgba(51, 65, 85, 0.6)" />
-              <XAxis
-                dataKey="date"
-                tick={{ fill: '#64748B', fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}
-                tickFormatter={d => d.slice(5)}
-              />
+              <XAxis dataKey="date" tick={{ fill: '#64748B', fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}
+                tickFormatter={d => d.slice(5)} />
               <YAxis tick={{ fill: '#64748B', fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }} />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: '0.6rem', color: '#64748B' }} />
 
               {todayLabel && (
-                <ReferenceLine
-                  x={todayLabel}
-                  stroke="#D97706"
-                  strokeDasharray="4 3"
-                  strokeWidth={1.5}
-                  label={{
-                    value: 'TODAY',
-                    fill: '#D97706',
-                    fontSize: 9,
-                    fontWeight: 700,
-                    fontFamily: "'JetBrains Mono', monospace",
-                    position: 'top',
-                  }}
-                />
+                <ReferenceLine x={todayLabel} stroke="#D97706" strokeDasharray="4 3" strokeWidth={1.5}
+                  label={{ value: 'TODAY', fill: '#D97706', fontSize: 9, fontWeight: 700,
+                    fontFamily: "'JetBrains Mono', monospace", position: 'top' }} />
               )}
 
               {symptomKeys.map((key, i) => (
-                <Area
-                  key={key}
-                  type="monotone"
-                  dataKey={key}
+                <Area key={key} type="monotone" dataKey={key}
                   stroke={FORECAST_COLORS[i % FORECAST_COLORS.length]}
-                  fill="none"
-                  strokeWidth={1.5}
-                  dot={false}
+                  fill="none" strokeWidth={1.5} dot={false}
                   activeDot={{ r: 2.5, strokeWidth: 1 }}
-                  connectNulls
+                  connectNulls={true}
                 />
               ))}
             </AreaChart>
@@ -201,7 +220,7 @@ const ForecastChart = () => {
         </>
       ) : (
         <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-          {loading ? 'Generating forecast...' : 'Insufficient data for forecast. Need at least 7 days of symptom logs.'}
+          {loading ? 'Generating forecast...' : 'Insufficient data for forecast.'}
         </div>
       )}
     </div>
