@@ -1,19 +1,44 @@
-# Environment Variables
-.env
-
-# Dependencies
+# Virtual Environment
 .venv/
-env/
 venv/
+env/
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
-# ML Models / Weights (Optional: Remove if you want models pushed)
-# *.pkl
-# *.onnx
-
-# IDEs
-.vscode/
+# ML Models (large binary files)
+ml/models/*.pkl
+ml/models/*.onnx
 
 # Logs
-*.log
+ml/surge_alerts.log
+ml/test_write.txt
+test_results.txt
+
+# Environment variables (secrets)
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Zip files
+*.zip
+
+# Docs generated files
+*.docx
+
+# VSCode
+.vscode/
+
+# Temp/test scripts
+strip_comments.py
+simulate_new_data.py
+check_db.py
+ml/test_api.py
