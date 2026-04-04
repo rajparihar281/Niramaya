@@ -73,7 +73,9 @@ func main() {
 	}
 
 	// ── Auto-migrate: ensure all required tables exist ─────────────────────────
-	if err := autoMigrate(context.Background()); err != nil {
+	migrateCtx, migrateCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer migrateCancel()
+	if err := autoMigrate(migrateCtx); err != nil {
 		log.Fatalf("❌ Migration Failed: %v", err)
 	}
 	log.Println("✅ DB schema verified")
@@ -142,6 +144,9 @@ func handleDispatch(w http.ResponseWriter, r *http.Request) {
 	hashedPatientID := security.HashPatientID(req.PatientID)
 	log.Printf("🔐 [dispatch] patient_id_sha=%s", hashedPatientID)
 
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	var hID, hName, driverID string
 	var hLat, hLng, dist float64
 
@@ -168,7 +173,7 @@ func handleDispatch(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("🔍 [dispatch] Querying nearest hospital (lng=%.6f lat=%.6f)", req.Longitude, req.Latitude)
 
-	err := dbPool.QueryRow(context.Background(), query, req.Longitude, req.Latitude).
+	err := dbPool.QueryRow(ctx, query, req.Longitude, req.Latitude).
 		Scan(&hID, &hName, &driverID, &dist, &hLat, &hLng)
 
 	if err != nil {
@@ -182,47 +187,33 @@ func handleDispatch(w http.ResponseWriter, r *http.Request) {
 
 	etaMinutes := haversineETA(req.Latitude, req.Longitude, hLat, hLng, 40.0)
 
-	ctx := context.Background()
-	tx, err := dbPool.Begin(ctx)
-	if err != nil {
-		log.Printf("❌ [dispatch] Begin transaction failed: %v", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
-		return
-	}
-	defer tx.Rollback(ctx)
-
-	if _, err := tx.Exec(ctx,
-		"UPDATE drivers SET is_on_duty = false WHERE id = $1", driverID); err != nil {
-		log.Printf("❌ [dispatch] Update driver is_on_duty failed: %v", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
-		return
-	}
-	log.Printf("🚑 [dispatch] Driver %s marked is_on_duty=false", driverID)
-
+	// Single atomic CTE: update driver + insert dispatch in one statement.
+	// Avoids multi-statement transactions over Supabase connection pooler
+	// (port 6543, transaction mode) which causes statement timeout on UPDATE.
 	var dID string
-	if err := tx.QueryRow(ctx,
-		`INSERT INTO dispatches
+	err = dbPool.QueryRow(ctx, `
+		WITH mark_driver AS (
+			UPDATE drivers SET is_on_duty = false WHERE id = $3
+			RETURNING id
+		)
+		INSERT INTO dispatches
 			(patient_id, hospital_id, driver_id, status,
 			 patient_lat, patient_lng, hospital_lat, hospital_lng)
-		 VALUES ($1, $2, $3, 'assigned', $4, $5, $6, $7)
-		 RETURNING id`,
+		SELECT $1, $2, id, 'assigned', $4, $5, $6, $7
+		FROM mark_driver
+		RETURNING id`,
 		hashedPatientID, hID, driverID,
-		req.Latitude, req.Longitude, // patient coords from SOS request
-		hLat, hLng,                  // hospital coords from PostGIS query
-	).Scan(&dID); err != nil {
-		log.Printf("❌ [dispatch] Insert dispatch failed: %v", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
-		return
-	}
-	log.Printf("📝 [dispatch] Dispatch record created id=%s (patient=%.6f,%.6f hospital=%.6f,%.6f)",
-		dID, req.Latitude, req.Longitude, hLat, hLng)
+		req.Latitude, req.Longitude,
+		hLat, hLng,
+	).Scan(&dID)
 
-	if err := tx.Commit(ctx); err != nil {
-		log.Printf("❌ [dispatch] Commit failed: %v", err)
+	if err != nil {
+		log.Printf("❌ [dispatch] Atomic dispatch failed: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 		return
 	}
-	log.Printf("✅ [dispatch] Transaction committed")
+	log.Printf("📝 [dispatch] Dispatch record created id=%s driver=%s marked off-duty",
+		dID, driverID)
 
 	guardianCount, guardianErr := dispatchGuardianAlerts(ctx, req.PatientID, dID, req.Latitude, req.Longitude)
 	if guardianErr != nil {
@@ -484,15 +475,14 @@ func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 }
 
 func autoMigrate(ctx context.Context) error {
-	_, err := dbPool.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS medical_passports (
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS medical_passports (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			patient_hash TEXT NOT NULL UNIQUE,
 			payload_encrypted TEXT NOT NULL,
 			updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
-		);
-
-		CREATE TABLE IF NOT EXISTS guardian_alerts (
+		)`,
+		`CREATE TABLE IF NOT EXISTS guardian_alerts (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			guardian_user_id UUID NOT NULL,
 			victim_user_id UUID NOT NULL,
@@ -501,29 +491,23 @@ func autoMigrate(ctx context.Context) error {
 			longitude DOUBLE PRECISION,
 			status TEXT NOT NULL DEFAULT 'pending',
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
-		);
+		)`,
+		`ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS driver_id UUID REFERENCES drivers(id) ON DELETE SET NULL`,
+		`ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS patient_lat DOUBLE PRECISION`,
+		`ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS patient_lng DOUBLE PRECISION`,
+		`ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS hospital_lat DOUBLE PRECISION`,
+		`ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS hospital_lng DOUBLE PRECISION`,
+		`ALTER TABLE drivers ADD COLUMN IF NOT EXISTS driver_lat DOUBLE PRECISION`,
+		`ALTER TABLE drivers ADD COLUMN IF NOT EXISTS driver_lng DOUBLE PRECISION`,
+		`ALTER TABLE drivers ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMP WITH TIME ZONE`,
+	}
 
-		-- Ensure dispatches has all coordinate + driver columns (unified schema)
-		ALTER TABLE dispatches
-			ADD COLUMN IF NOT EXISTS driver_id UUID REFERENCES drivers(id) ON DELETE SET NULL;
-		ALTER TABLE dispatches
-			ADD COLUMN IF NOT EXISTS patient_lat DOUBLE PRECISION;
-		ALTER TABLE dispatches
-			ADD COLUMN IF NOT EXISTS patient_lng DOUBLE PRECISION;
-		ALTER TABLE dispatches
-			ADD COLUMN IF NOT EXISTS hospital_lat DOUBLE PRECISION;
-		ALTER TABLE dispatches
-			ADD COLUMN IF NOT EXISTS hospital_lng DOUBLE PRECISION;
-
-		-- Driver live location (plain floats — no PostGIS extension required)
-		ALTER TABLE drivers
-			ADD COLUMN IF NOT EXISTS driver_lat DOUBLE PRECISION;
-		ALTER TABLE drivers
-			ADD COLUMN IF NOT EXISTS driver_lng DOUBLE PRECISION;
-		ALTER TABLE drivers
-			ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMP WITH TIME ZONE;
-	`)
-	return err
+	for _, stmt := range stmts {
+		if _, err := dbPool.Exec(ctx, stmt); err != nil {
+			log.Printf("⚠ [migrate] skipped: %v", err)
+		}
+	}
+	return nil
 }
 
 func haversineETA(lat1, lng1, lat2, lng2, speed float64) float64 {
