@@ -109,6 +109,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
         ),
         child: SafeArea(
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const Spacer(flex: 3),
 
@@ -220,6 +221,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                 child: FadeTransition(
                   opacity: _textOpacity,
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Text(
                         'NIRAMAYA',

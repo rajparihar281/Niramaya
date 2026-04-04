@@ -239,8 +239,8 @@ class DispatchPanel extends StatelessWidget {
   String _statusLabel(String status) {
     switch (status) {
       case 'assigned':  return 'Ambulance dispatched — on the way';
-      case 'en_route':  return 'Ambulance en route';
-      case 'arrived':   return 'Ambulance has arrived';
+      case 'picked_up': return 'Ambulance en route to hospital';
+      case 'arrived':   return 'Ambulance has arrived at your location';
       case 'completed': return 'Dispatch completed';
       default:          return 'Status: $status';
     }
@@ -249,7 +249,7 @@ class DispatchPanel extends StatelessWidget {
   Color _statusColor(String status) {
     switch (status) {
       case 'assigned':  return AppColors.primary;
-      case 'en_route':  return AppColors.warning;
+      case 'picked_up': return AppColors.warning;
       case 'arrived':   return AppColors.success;
       case 'completed': return AppColors.success;
       default:          return AppColors.textSecondary;

@@ -127,6 +127,9 @@ class _DispatchTrackingScreenState
             options: MapOptions(
               initialCenter: center,
               initialZoom: 14,
+              interactionOptions: const InteractionOptions(
+                flags: InteractiveFlag.all,
+              ),
             ),
             children: [
               TileLayer(
@@ -248,10 +251,126 @@ class _DispatchTrackingScreenState
             left: 0,
             right: 0,
             bottom: 0,
-            child: DispatchPanel(
-              dispatch: dispatch,
-              status: dispatchState.status,
-              onCancel: _handleCancel,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Ambulance info card
+                Container(
+                  margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 12,
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      // Ambulance icon
+                      Container(
+                        width: 44, height: 44,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.local_shipping, color: AppColors.primary, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              dispatch.driverName ?? 'Driver',
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 2),
+                            Row(children: [
+                              const Icon(Icons.star, size: 12, color: Color(0xFFD97706)),
+                              const SizedBox(width: 3),
+                              Text(
+                                (dispatch.driverRating ?? 5.0).toStringAsFixed(1),
+                                style: const TextStyle(fontSize: 12, color: Color(0xFFD97706), fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                dispatch.plateNumber ?? '',
+                                style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                              ),
+                            ]),
+                          ],
+                        ),
+                      ),
+                      // Live ETA from OSRM
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            dispatch.liveEta ?? '${dispatch.etaMinutes.toInt()} min',
+                            style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w800,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                          Text(
+                            dispatch.liveDistance ?? dispatch.distance,
+                            style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                // Hospital + dept info
+                Container(
+                  margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.06),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.local_hospital, color: AppColors.emergency, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        dispatch.hospital,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    if (dispatch.requiredDept != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.emergency.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          dispatch.requiredDept!.toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 10, fontWeight: FontWeight.w700,
+                            color: AppColors.emergency,
+                          ),
+                        ),
+                      ),
+                  ]),
+                ),
+                DispatchPanel(
+                  dispatch: dispatch,
+                  status: dispatchState.status,
+                  onCancel: _handleCancel,
+                ),
+              ],
             ),
           ),
         ],

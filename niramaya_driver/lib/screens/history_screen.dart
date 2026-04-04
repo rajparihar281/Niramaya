@@ -53,13 +53,29 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       final to = from + AppConstants.historyPageSize - 1;
 
       final result = await SupabaseService.client
-          .from('driver_dispatch_history')
-          .select()
-          .eq('driver_user_id', profile.id)
+          .from('dispatches')
+          .select('id, patient_id, hospital_id, status, created_at, pickup_confirmed_at, dropoff_confirmed_at, hospital_lat, hospital_lng')
+          .eq('driver_id', profile.id)
           .order('created_at', ascending: false)
           .range(from, to);
 
-      final rows = List<Map<String, dynamic>>.from(result);
+      // Enrich with hospital name
+      final rows = await Future.wait(
+        List<Map<String, dynamic>>.from(result).map((row) async {
+          final hospitalId = row['hospital_id']?.toString();
+          if (hospitalId != null) {
+            try {
+              final h = await SupabaseService.client
+                  .from('hospitals')
+                  .select('name')
+                  .eq('id', hospitalId)
+                  .maybeSingle();
+              return {...row, 'hospital_name': h?['name'] ?? 'Unknown Hospital'};
+            } catch (_) {}
+          }
+          return {...row, 'hospital_name': 'Unknown Hospital'};
+        }),
+      );
 
       setState(() {
         _dispatches.addAll(rows);

@@ -608,9 +608,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             hospitalName: dispatchState.hospitalName ?? 'Unknown Hospital',
             onOpenMap: () => Navigator.of(context).pushNamed('/map'),
             onConfirmPickup: () =>
-                ref.read(dispatchProvider.notifier).confirmPickup(),
+                ref.read(dispatchProvider.notifier).confirmReach(),
             onArrivedHospital: () =>
-                ref.read(dispatchProvider.notifier).arrivedAtHospital(),
+                ref.read(dispatchProvider.notifier).confirmPickup(),
             onComplete: () {
               if (profile != null) {
                 ref.read(dispatchProvider.notifier).completeDispatch(profile.id);

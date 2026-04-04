@@ -1,7 +1,6 @@
 // ── Dispatch Alert Overlay — Full-screen emergency alert ─────────────────────
 
 import 'package:flutter/material.dart';
-import '../core/theme.dart';
 import '../core/sha_utils.dart';
 import '../models/dispatch_model.dart';
 

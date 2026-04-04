@@ -65,6 +65,7 @@ class DispatchNotifier extends StateNotifier<DispatchState> {
     required String patientId,
     required double latitude,
     required double longitude,
+    String requiredDept = 'emergency',
   }) async {
     _scanIndex = 0;
     state = state.copyWith(
@@ -73,15 +74,12 @@ class DispatchNotifier extends StateNotifier<DispatchState> {
       noDriversAvailable: false,
       scanningHospital: _hospitals[0],
     );
-    debugPrint('[Dispatch] 📡 POST /v1/dispatch → patient=$patientId lat=$latitude lng=$longitude');
+    debugPrint('[Dispatch] 📡 POST /v1/dispatch → patient=$patientId lat=$latitude lng=$longitude dept=$requiredDept');
 
-    // Cycle hospital names every 1.2s while waiting for backend
     _scanTimer?.cancel();
     _scanTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
       _scanIndex = (_scanIndex + 1) % _hospitals.length;
-      if (mounted) {
-        state = state.copyWith(scanningHospital: _hospitals[_scanIndex]);
-      }
+      if (mounted) state = state.copyWith(scanningHospital: _hospitals[_scanIndex]);
     });
 
     try {
@@ -89,6 +87,7 @@ class DispatchNotifier extends StateNotifier<DispatchState> {
         patientId: patientId,
         latitude: latitude,
         longitude: longitude,
+        requiredDept: requiredDept,
       );
 
       _scanTimer?.cancel();

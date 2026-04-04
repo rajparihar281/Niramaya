@@ -72,12 +72,6 @@ func main() {
 		log.Fatalf("❌ DB Ping Failed — check your DB password and network: %v", err)
 	}
 
-	// ── Auto-migrate: ensure all required tables exist ─────────────────────────
-	migrateCtx, migrateCancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer migrateCancel()
-	if err := autoMigrate(migrateCtx); err != nil {
-		log.Fatalf("❌ Migration Failed: %v", err)
-	}
 	log.Println("✅ DB schema verified")
 
 	r := chi.NewRouter()
@@ -156,19 +150,23 @@ func handleDispatch(w http.ResponseWriter, r *http.Request) {
 			h.name,
 			d.id AS driver_id,
 			ST_Distance(
-				h.location,
+				ST_SetSRID(ST_MakePoint(d.driver_lng, d.driver_lat), 4326)::geography,
 				ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
 			) AS dist,
 			ST_Y(h.location::geometry) AS h_lat,
 			ST_X(h.location::geometry) AS h_lng
-		FROM hospitals h
-		JOIN drivers d ON d.hospital_id = h.id
+		FROM drivers d
+		JOIN hospitals h ON h.id = d.hospital_id
 		WHERE
 			d.is_on_duty   = true
 			AND d.is_verified = true
 			AND d.is_active   = true
 			AND h.is_active   = true
-		ORDER BY dist ASC
+			AND d.driver_lat  IS NOT NULL
+			AND d.driver_lng  IS NOT NULL
+		ORDER BY
+			ST_SetSRID(ST_MakePoint(d.driver_lng, d.driver_lat), 4326)::geography
+			<-> ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
 		LIMIT 1`
 
 	log.Printf("🔍 [dispatch] Querying nearest hospital (lng=%.6f lat=%.6f)", req.Longitude, req.Latitude)
@@ -223,6 +221,7 @@ func handleDispatch(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"status":                  "assigned",
 		"dispatch_id":             dID,
+		"driver_id":               driverID,
 		"hospital":                hName,
 		"hospital_lat":            hLat,
 		"hospital_lng":            hLng,
@@ -472,42 +471,6 @@ func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(v)
-}
-
-func autoMigrate(ctx context.Context) error {
-	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS medical_passports (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			patient_hash TEXT NOT NULL UNIQUE,
-			payload_encrypted TEXT NOT NULL,
-			updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
-		)`,
-		`CREATE TABLE IF NOT EXISTS guardian_alerts (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			guardian_user_id UUID NOT NULL,
-			victim_user_id UUID NOT NULL,
-			dispatch_id UUID REFERENCES dispatches(id) ON DELETE CASCADE,
-			latitude DOUBLE PRECISION,
-			longitude DOUBLE PRECISION,
-			status TEXT NOT NULL DEFAULT 'pending',
-			created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
-		)`,
-		`ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS driver_id UUID REFERENCES drivers(id) ON DELETE SET NULL`,
-		`ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS patient_lat DOUBLE PRECISION`,
-		`ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS patient_lng DOUBLE PRECISION`,
-		`ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS hospital_lat DOUBLE PRECISION`,
-		`ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS hospital_lng DOUBLE PRECISION`,
-		`ALTER TABLE drivers ADD COLUMN IF NOT EXISTS driver_lat DOUBLE PRECISION`,
-		`ALTER TABLE drivers ADD COLUMN IF NOT EXISTS driver_lng DOUBLE PRECISION`,
-		`ALTER TABLE drivers ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMP WITH TIME ZONE`,
-	}
-
-	for _, stmt := range stmts {
-		if _, err := dbPool.Exec(ctx, stmt); err != nil {
-			log.Printf("⚠ [migrate] skipped: %v", err)
-		}
-	}
-	return nil
 }
 
 func haversineETA(lat1, lng1, lat2, lng2, speed float64) float64 {

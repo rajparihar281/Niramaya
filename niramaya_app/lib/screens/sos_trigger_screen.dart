@@ -11,6 +11,43 @@ import '../core/theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/dispatch_provider.dart';
 
+// Clinical triage categories
+enum _TriageCategory { accident, cardiac, maternity }
+
+extension _TriageCategoryX on _TriageCategory {
+  String get label {
+    switch (this) {
+      case _TriageCategory.accident:  return 'ACCIDENT';
+      case _TriageCategory.cardiac:   return 'CARDIAC';
+      case _TriageCategory.maternity: return 'MATERNITY';
+    }
+  }
+
+  String get dept {
+    switch (this) {
+      case _TriageCategory.accident:  return 'trauma';
+      case _TriageCategory.cardiac:   return 'cardiology';
+      case _TriageCategory.maternity: return 'maternity';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case _TriageCategory.accident:  return Icons.car_crash;
+      case _TriageCategory.cardiac:   return Icons.favorite;
+      case _TriageCategory.maternity: return Icons.pregnant_woman;
+    }
+  }
+
+  Color get color {
+    switch (this) {
+      case _TriageCategory.accident:  return const Color(0xFFFF6B35);
+      case _TriageCategory.cardiac:   return const Color(0xFFE8303A);
+      case _TriageCategory.maternity: return const Color(0xFF9C27B0);
+    }
+  }
+}
+
 class SosTriggerScreen extends ConsumerStatefulWidget {
   const SosTriggerScreen({super.key});
 
@@ -23,16 +60,17 @@ class _SosTriggerScreenState extends ConsumerState<SosTriggerScreen> {
 
   final FlutterTts _tts = FlutterTts();
 
-  // Phase: 'fuse' | 'dispatching' | 'success' | 'no_drivers' | 'error'
-  String _phase = 'fuse';
+  // Phase: 'triage' | 'fuse' | 'dispatching' | 'success' | 'no_drivers' | 'error'
+  String _phase = 'triage';
   int _countdown = _countdownSeconds;
   String? _errorMsg;
+  String _requiredDept = 'emergency';
   Timer? _timer;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _startFuse());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initTriage());
   }
 
   @override
@@ -42,25 +80,29 @@ class _SosTriggerScreenState extends ConsumerState<SosTriggerScreen> {
     super.dispose();
   }
 
+  Future<void> _initTriage() async {
+    await _tts.setLanguage('en-US');
+    await _tts.setSpeechRate(0.5);
+    await _tts.speak('Select emergency type.');
+  }
+
+  void _selectTriage(_TriageCategory cat) {
+    HapticFeedback.mediumImpact();
+    _requiredDept = cat.dept;
+    setState(() => _phase = 'fuse');
+    _startFuse();
+  }
+
   // ── Safety Fuse ──────────────────────────────────────────────────────────
 
   Future<void> _startFuse() async {
-    await _tts.setLanguage('en-US');
-    await _tts.setSpeechRate(0.5);
-
     if (await Vibration.hasVibrator()) {
       Vibration.vibrate(pattern: [0, 500, 200, 500], intensities: [255, 255]);
     }
-
-    await _tts.speak(
-      'Emergency SOS detected. Dispatching help in 3 seconds. Tap to cancel.',
-    );
+    await _tts.speak('Dispatching help in 3 seconds. Tap to cancel.');
 
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) {
-        t.cancel();
-        return;
-      }
+      if (!mounted) { t.cancel(); return; }
       setState(() => _countdown--);
       if (_countdown <= 0) {
         t.cancel();
@@ -73,71 +115,50 @@ class _SosTriggerScreenState extends ConsumerState<SosTriggerScreen> {
     _timer?.cancel();
     _tts.stop();
     Vibration.cancel();
-    if (mounted) {
-      Navigator.pushNamedAndRemoveUntil(context, '/home', (r) => false);
-    }
+    if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/home', (r) => false);
   }
 
   // ── Atomic Dispatch ──────────────────────────────────────────────────────
 
   Future<void> _executeDispatch() async {
     setState(() => _phase = 'dispatching');
-    debugPrint('[SOS] 🚀 _executeDispatch started');
 
     try {
       final abhaId = ref.read(authProvider).user?.abhaId;
-      debugPrint('[SOS] 🔑 abhaId=$abhaId');
-
       if (abhaId == null || abhaId.isEmpty) {
         throw Exception('Identity not found. Please login to Niramaya.');
       }
 
       LocationPermission perm = await Geolocator.checkPermission();
-      debugPrint('[SOS] 📍 Location permission=$perm');
-
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
-        debugPrint('[SOS] 📍 After request permission=$perm');
       }
-      if (perm == LocationPermission.denied ||
-          perm == LocationPermission.deniedForever) {
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
         throw Exception('Location permission denied. Cannot dispatch SOS.');
       }
 
-      debugPrint('[SOS] 📍 Fetching GPS position...');
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
-      debugPrint('[SOS] 📍 Position: lat=${position.latitude} lng=${position.longitude}');
 
-      debugPrint('[SOS] 📡 Calling triggerDispatch...');
       final success = await ref.read(dispatchProvider.notifier).triggerDispatch(
             patientId: abhaId,
             latitude: position.latitude,
             longitude: position.longitude,
+            requiredDept: _requiredDept,
           );
-      debugPrint('[SOS] 📡 triggerDispatch returned success=$success');
 
       if (!mounted) return;
-
       final dispatchState = ref.read(dispatchProvider);
 
       if (dispatchState.noDriversAvailable) {
-        debugPrint('[SOS] ⚠ No drivers available — showing fallback');
         setState(() => _phase = 'no_drivers');
         return;
       }
 
-      if (!success) {
-        final err = dispatchState.error;
-        debugPrint('[SOS] ❌ Dispatch failed with error: $err');
-        throw Exception(err ?? 'Unknown dispatch error.');
-      }
+      if (!success) throw Exception(dispatchState.error ?? 'Unknown dispatch error.');
 
-      debugPrint('[SOS] ✅ Dispatch succeeded');
-      if (await Vibration.hasVibrator()) {
-        Vibration.vibrate(duration: 600);
-      }
+      if (await Vibration.hasVibrator()) Vibration.vibrate(duration: 600);
       await _tts.speak('Dispatch successful. Ambulance is on the way.');
       setState(() => _phase = 'success');
 
@@ -156,7 +177,6 @@ class _SosTriggerScreenState extends ConsumerState<SosTriggerScreen> {
         },
       );
     } catch (e) {
-      debugPrint('[SOS] ❌ Exception in _executeDispatch: $e');
       if (!mounted) return;
 
       final isNetworkError = e is SocketException ||
@@ -169,23 +189,17 @@ class _SosTriggerScreenState extends ConsumerState<SosTriggerScreen> {
       HapticFeedback.heavyImpact();
 
       if (isNetworkError) {
-        // Network down — revert to fuse so user can retry once tunnel is back
         await _tts.speak('Connection failed. Check your network and retry.');
         if (!mounted) return;
         setState(() {
           _phase = 'fuse';
           _countdown = _countdownSeconds;
-          _errorMsg = null;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Connection Error: Please check if the Niramaya Engine is online.',
-            ),
-            backgroundColor: Colors.deepOrange,
-            duration: Duration(seconds: 4),
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Connection Error: Please check if the Niramaya Engine is online.'),
+          backgroundColor: Colors.deepOrange,
+          duration: Duration(seconds: 4),
+        ));
       } else {
         await _tts.speak('SOS failed. Please retry or call emergency services.');
         setState(() {
@@ -198,8 +212,6 @@ class _SosTriggerScreenState extends ConsumerState<SosTriggerScreen> {
 
   void _broadcastPrivate() {
     _tts.speak('Broadcasting to private ambulances. Please stay calm.');
-    // Re-trigger dispatch — backend will try again or a future endpoint
-    // can target private fleet. For now retries the same endpoint.
     _executeDispatch();
   }
 
@@ -216,22 +228,15 @@ class _SosTriggerScreenState extends ConsumerState<SosTriggerScreen> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: switch (_phase) {
-              'fuse' => _FuseView(
-                  countdown: _countdown,
-                  onCancel: _cancelSos,
-                ),
-              'dispatching' => _DispatchingView(
-                  hospitalName: scanningHospital ?? 'Scanning grid...',
-                ),
-              'success' => _StatusView(
+              'triage' => _TriageView(onSelect: _selectTriage, onCancel: _cancelSos),
+              'fuse' => _FuseView(countdown: _countdown, onCancel: _cancelSos),
+              'dispatching' => _DispatchingView(hospitalName: scanningHospital ?? 'Scanning grid...'),
+              'success' => const _StatusView(
                   icon: Icons.check_circle_outline,
                   label: 'AMBULANCE CONNECTED',
                   sub: 'Help is on the way.',
                 ),
-              'no_drivers' => _NoDriverView(
-                  onBroadcast: _broadcastPrivate,
-                  onClose: _cancelSos,
-                ),
+              'no_drivers' => _NoDriverView(onBroadcast: _broadcastPrivate, onClose: _cancelSos),
               _ => _ErrorView(
                   message: _errorMsg ?? 'Unknown error.',
                   onRetry: _executeDispatch,
@@ -245,7 +250,68 @@ class _SosTriggerScreenState extends ConsumerState<SosTriggerScreen> {
   }
 }
 
-// ── Sub-widgets ──────────────────────────────────────────────────────────────
+// ── Triage View ──────────────────────────────────────────────────────────────
+
+class _TriageView extends StatelessWidget {
+  final void Function(_TriageCategory) onSelect;
+  final VoidCallback onCancel;
+  const _TriageView({required this.onSelect, required this.onCancel});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(Icons.emergency, size: 56, color: Colors.white),
+        const SizedBox(height: 16),
+        const Text(
+          'SELECT EMERGENCY TYPE',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 2,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'This helps route you to the right department',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 36),
+        ..._TriageCategory.values.map((cat) => Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: SizedBox(
+            width: double.infinity,
+            height: 72,
+            child: ElevatedButton.icon(
+              onPressed: () => onSelect(cat),
+              icon: Icon(cat.icon, size: 28),
+              label: Text(
+                cat.label,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 2),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: cat.color,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 4,
+              ),
+            ),
+          ),
+        )),
+        const SizedBox(height: 8),
+        TextButton(
+          onPressed: onCancel,
+          child: const Text('Cancel', style: TextStyle(color: Colors.white70, fontSize: 15)),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Fuse View ────────────────────────────────────────────────────────────────
 
 class _FuseView extends StatelessWidget {
   final int countdown;
@@ -261,21 +327,12 @@ class _FuseView extends StatelessWidget {
         const SizedBox(height: 24),
         Text(
           '$countdown',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 96,
-            fontWeight: FontWeight.w900,
-          ),
+          style: const TextStyle(color: Colors.white, fontSize: 96, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 8),
         const Text(
           'DISPATCHING AMBULANCE',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.5,
-          ),
+          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.5),
         ),
         const SizedBox(height: 48),
         SizedBox(
@@ -286,20 +343,17 @@ class _FuseView extends StatelessWidget {
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.white,
               foregroundColor: AppColors.emergency,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             ),
-            child: const Text(
-              'CANCEL SOS',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-            ),
+            child: const Text('CANCEL SOS', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
           ),
         ),
       ],
     );
   }
 }
+
+// ── Dispatching View ─────────────────────────────────────────────────────────
 
 class _DispatchingView extends StatelessWidget {
   final String hospitalName;
@@ -311,22 +365,13 @@ class _DispatchingView extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         const SizedBox(
-          width: 64,
-          height: 64,
-          child: CircularProgressIndicator(
-            color: Colors.white,
-            strokeWidth: 5,
-          ),
+          width: 64, height: 64,
+          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 5),
         ),
         const SizedBox(height: 32),
         const Text(
-          'SCANNING GWALIOR GRID',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 2,
-          ),
+          'SCANNING GRID',
+          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 2),
         ),
         const SizedBox(height: 20),
         Container(
@@ -341,10 +386,7 @@ class _DispatchingView extends StatelessWidget {
             transitionBuilder: (child, anim) => FadeTransition(
               opacity: anim,
               child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 0.3),
-                  end: Offset.zero,
-                ).animate(anim),
+                position: Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(anim),
                 child: child,
               ),
             ),
@@ -352,24 +394,18 @@ class _DispatchingView extends StatelessWidget {
               'Checking availability at\n$hospitalName',
               key: ValueKey(hospitalName),
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                height: 1.5,
-              ),
+              style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600, height: 1.5),
             ),
           ),
         ),
         const SizedBox(height: 16),
-        const Text(
-          'Contacting nearest verified driver...',
-          style: TextStyle(color: Colors.white60, fontSize: 12),
-        ),
+        const Text('Contacting nearest verified driver...', style: TextStyle(color: Colors.white60, fontSize: 12)),
       ],
     );
   }
 }
+
+// ── No Driver View ───────────────────────────────────────────────────────────
 
 class _NoDriverView extends StatelessWidget {
   final VoidCallback onBroadcast;
@@ -386,13 +422,7 @@ class _NoDriverView extends StatelessWidget {
         const Text(
           'NO GOVT. AMBULANCE\nAVAILABLE',
           textAlign: TextAlign.center,
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 22,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1,
-            height: 1.3,
-          ),
+          style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 1, height: 1.3),
         ),
         const SizedBox(height: 12),
         const Text(
@@ -407,16 +437,12 @@ class _NoDriverView extends StatelessWidget {
           child: ElevatedButton.icon(
             onPressed: onBroadcast,
             icon: const Icon(Icons.cell_tower, size: 22),
-            label: const Text(
-              'BROADCAST TO PRIVATE AMBULANCES',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-            ),
+            label: const Text('BROADCAST TO PRIVATE AMBULANCES',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.white,
               foregroundColor: AppColors.emergency,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
           ),
         ),
@@ -427,9 +453,7 @@ class _NoDriverView extends StatelessWidget {
             foregroundColor: Colors.white,
             side: const BorderSide(color: Colors.white54),
             minimumSize: const Size(double.infinity, 48),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
           child: const Text('Cancel'),
         ),
@@ -438,15 +462,13 @@ class _NoDriverView extends StatelessWidget {
   }
 }
 
+// ── Status View ──────────────────────────────────────────────────────────────
+
 class _StatusView extends StatelessWidget {
   final IconData icon;
   final String label;
   final String sub;
-  const _StatusView({
-    required this.icon,
-    required this.label,
-    required this.sub,
-  });
+  const _StatusView({required this.icon, required this.label, required this.sub});
 
   @override
   Widget build(BuildContext context) {
@@ -455,15 +477,7 @@ class _StatusView extends StatelessWidget {
       children: [
         Icon(icon, size: 80, color: Colors.white),
         const SizedBox(height: 32),
-        Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-          ),
-        ),
+        Text(label, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
         const SizedBox(height: 8),
         Text(sub, style: const TextStyle(color: Colors.white70, fontSize: 14)),
       ],
@@ -471,12 +485,13 @@ class _StatusView extends StatelessWidget {
   }
 }
 
+// ── Error View ───────────────────────────────────────────────────────────────
+
 class _ErrorView extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
   final VoidCallback onClose;
-  const _ErrorView(
-      {required this.message, required this.onRetry, required this.onClose});
+  const _ErrorView({required this.message, required this.onRetry, required this.onClose});
 
   @override
   Widget build(BuildContext context) {
@@ -485,35 +500,21 @@ class _ErrorView extends StatelessWidget {
       children: [
         const Icon(Icons.error_outline, size: 80, color: Colors.white),
         const SizedBox(height: 24),
-        const Text('SOS FAILED',
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.bold)),
+        const Text('SOS FAILED', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
         const SizedBox(height: 16),
-        Text(message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white70, fontSize: 14)),
+        Text(message, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 14)),
         const SizedBox(height: 32),
         SizedBox(
           width: double.infinity,
           height: 56,
           child: ElevatedButton(
             onPressed: onRetry,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: AppColors.emergency,
-            ),
-            child: const Text('RETRY SOS',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: AppColors.emergency),
+            child: const Text('RETRY SOS', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ),
         const SizedBox(height: 12),
-        TextButton(
-          onPressed: onClose,
-          child:
-              const Text('Close', style: TextStyle(color: Colors.white70)),
-        ),
+        TextButton(onPressed: onClose, child: const Text('Close', style: TextStyle(color: Colors.white70))),
       ],
     );
   }

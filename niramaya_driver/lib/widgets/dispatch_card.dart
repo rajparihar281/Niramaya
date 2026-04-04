@@ -276,7 +276,7 @@ class _DispatchCardState extends State<DispatchCard>
   Color get _statusColor {
     switch (widget.dispatch.status) {
       case DispatchStatus.assigned:  return AppColors.warning;
-      case DispatchStatus.enRoute:   return AppColors.primary;
+      case DispatchStatus.pickedUp:  return AppColors.primary;
       case DispatchStatus.arrived:   return AppColors.success;
       case DispatchStatus.completed: return AppColors.success;
       case DispatchStatus.unknown:   return AppColors.textMuted;
@@ -285,26 +285,26 @@ class _DispatchCardState extends State<DispatchCard>
 
   String get _actionLabel {
     switch (widget.dispatch.status) {
-      case DispatchStatus.assigned: return 'CONFIRM PICKUP';
-      case DispatchStatus.enRoute:  return 'ARRIVED';
-      case DispatchStatus.arrived:  return 'COMPLETE';
-      default:                      return 'COMPLETE';
+      case DispatchStatus.assigned:  return 'CONFIRM REACH';
+      case DispatchStatus.pickedUp:  return 'CONFIRM PICKUP';
+      case DispatchStatus.arrived:   return 'COMPLETE';
+      default:                       return 'COMPLETE';
     }
   }
 
   Color get _actionColor {
     switch (widget.dispatch.status) {
-      case DispatchStatus.assigned: return AppColors.warning;
-      case DispatchStatus.enRoute:  return AppColors.primary;
-      default:                      return AppColors.success;
+      case DispatchStatus.assigned:  return AppColors.warning;
+      case DispatchStatus.pickedUp:  return AppColors.primary;
+      default:                       return AppColors.success;
     }
   }
 
   VoidCallback get _actionCallback {
     switch (widget.dispatch.status) {
-      case DispatchStatus.assigned: return widget.onConfirmPickup;
-      case DispatchStatus.enRoute:  return widget.onArrivedHospital;
-      default:                      return widget.onComplete;
+      case DispatchStatus.assigned:  return widget.onConfirmPickup;
+      case DispatchStatus.pickedUp:  return widget.onArrivedHospital;
+      default:                       return widget.onComplete;
     }
   }
 }

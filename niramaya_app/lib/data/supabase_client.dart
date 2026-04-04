@@ -18,6 +18,9 @@ class SupabaseClientHelper {
       await Supabase.initialize(
         url: AppConstants.supabaseUrl,
         anonKey: AppConstants.supabaseAnonKey,
+        realtimeClientOptions: const RealtimeClientOptions(
+          timeout: Duration(seconds: 30),
+        ),
       );
       isOffline = false;
     } catch (e) {
