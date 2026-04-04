@@ -444,7 +444,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   profile?.fullName ?? '—', AppColors.primary),
               _divider(),
               _infoRow(Icons.bloodtype_rounded, 'Blood Group',
-                  profile?.bloodGroup ?? '—', AppColors.emergency),
+                  profile?.bloodGroup ?? '—', AppColors.danger),
               _divider(),
               _infoRow(Icons.credit_card_rounded, 'License',
                   profile?.licenseNumber ?? '—', AppColors.warning),
