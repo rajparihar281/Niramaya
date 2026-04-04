@@ -115,7 +115,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, PUT, OPTIONS, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, ngrok-skip-browser-warning")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
@@ -201,14 +201,21 @@ func handleDispatch(w http.ResponseWriter, r *http.Request) {
 
 	var dID string
 	if err := tx.QueryRow(ctx,
-		`INSERT INTO dispatches (patient_id, hospital_id, driver_id, status)
-		 VALUES ($1, $2, $3, 'assigned') RETURNING id`,
-		hashedPatientID, hID, driverID).Scan(&dID); err != nil {
+		`INSERT INTO dispatches
+			(patient_id, hospital_id, driver_id, status,
+			 patient_lat, patient_lng, hospital_lat, hospital_lng)
+		 VALUES ($1, $2, $3, 'assigned', $4, $5, $6, $7)
+		 RETURNING id`,
+		hashedPatientID, hID, driverID,
+		req.Latitude, req.Longitude, // patient coords from SOS request
+		hLat, hLng,                  // hospital coords from PostGIS query
+	).Scan(&dID); err != nil {
 		log.Printf("❌ [dispatch] Insert dispatch failed: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 		return
 	}
-	log.Printf("📝 [dispatch] Dispatch record created id=%s", dID)
+	log.Printf("📝 [dispatch] Dispatch record created id=%s (patient=%.6f,%.6f hospital=%.6f,%.6f)",
+		dID, req.Latitude, req.Longitude, hLat, hLng)
 
 	if err := tx.Commit(ctx); err != nil {
 		log.Printf("❌ [dispatch] Commit failed: %v", err)
@@ -226,6 +233,10 @@ func handleDispatch(w http.ResponseWriter, r *http.Request) {
 		"status":                  "assigned",
 		"dispatch_id":             dID,
 		"hospital":                hName,
+		"hospital_lat":            hLat,
+		"hospital_lng":            hLng,
+		"patient_lat":             req.Latitude,
+		"patient_lng":             req.Longitude,
 		"distance":                fmt.Sprintf("%.0f meters", dist),
 		"eta_minutes":             math.Round(etaMinutes),
 		"patient_id_sha":          hashedPatientID,
@@ -492,9 +503,25 @@ func autoMigrate(ctx context.Context) error {
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 		);
 
-		-- Ensure dispatches has driver_id column (unified schema)
+		-- Ensure dispatches has all coordinate + driver columns (unified schema)
 		ALTER TABLE dispatches
 			ADD COLUMN IF NOT EXISTS driver_id UUID REFERENCES drivers(id) ON DELETE SET NULL;
+		ALTER TABLE dispatches
+			ADD COLUMN IF NOT EXISTS patient_lat DOUBLE PRECISION;
+		ALTER TABLE dispatches
+			ADD COLUMN IF NOT EXISTS patient_lng DOUBLE PRECISION;
+		ALTER TABLE dispatches
+			ADD COLUMN IF NOT EXISTS hospital_lat DOUBLE PRECISION;
+		ALTER TABLE dispatches
+			ADD COLUMN IF NOT EXISTS hospital_lng DOUBLE PRECISION;
+
+		-- Driver live location (plain floats — no PostGIS extension required)
+		ALTER TABLE drivers
+			ADD COLUMN IF NOT EXISTS driver_lat DOUBLE PRECISION;
+		ALTER TABLE drivers
+			ADD COLUMN IF NOT EXISTS driver_lng DOUBLE PRECISION;
+		ALTER TABLE drivers
+			ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMP WITH TIME ZONE;
 	`)
 	return err
 }

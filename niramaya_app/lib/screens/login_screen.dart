@@ -9,18 +9,33 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _abhaController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   String _displayText = '';
+  late AnimationController _glowController;
+  late Animation<double> _glowAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _glowController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat(reverse: true);
+    _glowAnimation = Tween<double>(begin: 0.3, end: 1.0).animate(
+      CurvedAnimation(parent: _glowController, curve: Curves.easeInOut),
+    );
+  }
 
   @override
   void dispose() {
     _abhaController.dispose();
+    _glowController.dispose();
     super.dispose();
   }
 
-  /// Format ABHA ID as XXXX-XXXX-XXXX-XX
   String _formatAbha(String raw) {
     final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
     final buffer = StringBuffer();
@@ -60,41 +75,68 @@ class _LoginScreenState extends State<LoginScreen> {
   void _showGuide() {
     showModalBottomSheet(
       context: context,
+      backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(24),
+        return Container(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
               Row(
                 children: [
-                  Icon(Icons.menu_book_rounded, color: AppColors.accent),
-                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.menu_book_rounded, color: AppColors.primary, size: 20),
+                  ),
+                  const SizedBox(width: 12),
                   Text(
                     'How to use Niramaya',
-                    style: Theme.of(context).textTheme.headlineMedium,
+                    style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ],
               ),
+              const SizedBox(height: 20),
+              _guideStep(context, '1', 'Enter your 14-digit ABHA Health ID'),
+              _guideStep(context, '2', 'Verify with OTP sent to your registered number'),
+              _guideStep(context, '3', 'Complete your health profile'),
+              _guideStep(context, '4', 'Use SOS button in emergencies — help is dispatched instantly'),
               const SizedBox(height: 16),
-              _guideStep('1', 'Enter your 14-digit ABHA Health ID'),
-              _guideStep('2', 'Verify with OTP sent to your registered number'),
-              _guideStep('3', 'Complete your health profile'),
-              _guideStep('4', 'Use SOS button in emergencies — help is dispatched instantly'),
-              const SizedBox(height: 16),
-              Text(
-                'Your ABHA ID is your Ayushman Bharat Health Account identifier. '
-                'If you don\'t have one, visit https://abha.abdm.gov.in to create it.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Text(
+                  'Your ABHA ID is your Ayushman Bharat Health Account identifier. '
+                  "If you don't have one, visit https://abha.abdm.gov.in to create it.",
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                    height: 1.5,
+                  ),
                 ),
               ),
-              const SizedBox(height: 24),
             ],
           ),
         );
@@ -102,18 +144,20 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _guideStep(String number, String text) {
+  Widget _guideStep(BuildContext context, String number, String text) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 24,
-            height: 24,
+            width: 26,
+            height: 26,
             decoration: BoxDecoration(
-              color: AppColors.accent,
-              borderRadius: BorderRadius.circular(12),
+              gradient: const LinearGradient(
+                colors: [Color(0xFF00C6AE), Color(0xFF0EA5E9)],
+              ),
+              borderRadius: BorderRadius.circular(13),
             ),
             child: Center(
               child: Text(
@@ -128,7 +172,10 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(text, style: const TextStyle(fontSize: 14)),
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
           ),
         ],
       ),
@@ -139,92 +186,193 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              children: [
-                const SizedBox(height: 16),
-                // Top right guide button
-                Align(
-                  alignment: Alignment.topRight,
-                  child: IconButton(
-                    onPressed: _showGuide,
-                    icon: const Icon(Icons.menu_book_rounded),
-                    color: AppColors.accent,
-                    tooltip: 'Guide',
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF0D1B2E), AppColors.background, Color(0xFF050810)],
+            stops: [0.0, 0.5, 1.0],
+          ),
+        ),
+        child: SafeArea(
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
+                children: [
+                  const SizedBox(height: 16),
+                  // Guide button top-right
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: IconButton(
+                        onPressed: _showGuide,
+                        icon: const Icon(Icons.menu_book_rounded),
+                        color: AppColors.primary,
+                        tooltip: 'Guide',
+                        iconSize: 20,
+                        padding: const EdgeInsets.all(8),
+                        constraints: const BoxConstraints(),
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 48),
-                // Logo
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(20),
+
+                  const SizedBox(height: 48),
+
+                  // Animated glow logo
+                  AnimatedBuilder(
+                    animation: _glowAnimation,
+                    builder: (_, child) => Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(22),
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF00C6AE), Color(0xFF0EA5E9)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primary.withValues(alpha: _glowAnimation.value * 0.5),
+                            blurRadius: 24,
+                            spreadRadius: 4,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.local_hospital,
+                        color: Colors.white,
+                        size: 40,
+                      ),
+                    ),
                   ),
-                  child: const Icon(
-                    Icons.local_hospital,
-                    color: Colors.white,
-                    size: 36,
+
+                  const SizedBox(height: 36),
+
+                  // Title
+                  Text(
+                    'Enter your ABHA ID',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                    textAlign: TextAlign.center,
                   ),
-                ),
-                const SizedBox(height: 32),
-                // Title
-                Text(
-                  'Enter your ABHA ID',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Your 14-digit Ayushman Bharat Health ID',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textSecondary,
+                  const SizedBox(height: 8),
+                  Text(
+                    'Your 14-digit Ayushman Bharat Health ID',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textSecondary,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                ),
-                const SizedBox(height: 40),
-                // ABHA Input
-                TextFormField(
-                  controller: _abhaController,
-                  onChanged: _onAbhaChanged,
-                  validator: _validateAbha,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9\-]')),
-                    LengthLimitingTextInputFormatter(17), // 14 digits + 3 hyphens
-                  ],
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: 2,
+
+                  const SizedBox(height: 44),
+
+                  // ABHA Input
+                  TextFormField(
+                    controller: _abhaController,
+                    onChanged: _onAbhaChanged,
+                    validator: _validateAbha,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9\-]')),
+                      LengthLimitingTextInputFormatter(17),
+                    ],
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 3,
+                      color: AppColors.textPrimary,
+                    ),
+                    textAlign: TextAlign.center,
+                    decoration: const InputDecoration(
+                      hintText: 'XXXX-XXXX-XXXX-XX',
+                      hintStyle: TextStyle(
+                        fontSize: 20,
+                        letterSpacing: 3,
+                        color: AppColors.textMuted,
+                      ),
+                      prefixIcon: Icon(Icons.badge_outlined, color: AppColors.primary),
+                    ),
                   ),
-                  textAlign: TextAlign.center,
-                  decoration: const InputDecoration(
-                    hintText: 'XXXX-XXXX-XXXX-XX',
-                    prefixIcon: Icon(Icons.badge_outlined),
+
+                  const SizedBox(height: 32),
+
+                  // Send OTP button with gradient
+                  Container(
+                    width: double.infinity,
+                    height: 54,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF00C6AE), Color(0xFF0EA5E9)],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.35),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: _sendOtp,
+                        borderRadius: BorderRadius.circular(14),
+                        child: const Center(
+                          child: Text(
+                            'Send OTP',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 32),
-                // Send OTP button
-                ElevatedButton(
-                  onPressed: _sendOtp,
-                  child: const Text('Send OTP'),
-                ),
-                const SizedBox(height: 24),
-                // Footer text
-                Text(
-                  'By continuing, you agree to share your health data\nfor emergency medical services.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
+
+                  const SizedBox(height: 28),
+
+                  // Privacy footer
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceElevated.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.shield_outlined, color: AppColors.primary, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'By continuing, you agree to share your health data for emergency medical services.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textSecondary,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+
+                  const SizedBox(height: 32),
+                ],
+              ),
             ),
           ),
         ),

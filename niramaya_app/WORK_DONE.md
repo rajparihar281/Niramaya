@@ -2,7 +2,92 @@
 
 ---
 
-## [2026-04-04] REGIONAL GRID VIEW — SOS Dispatch UX
+## [2026-04-04] NETWORK HANDSHAKE REPAIR — Global Dio Interceptor
+
+### SYSTEM_STATE
+- Network Layer: Centralized Dio interceptor handles all connection failures
+- NativeSocket.lookup: No longer pauses debugger — resolved as synthetic 503
+- Dispatch UI: Shows "Retry Connection" state on engine-offline instead of crashing
+
+### COMPLETED_TASKS
+- [X] `api_client.dart` — `onError` interceptor now catches `connectionError`, `connectionTimeout`, `receiveTimeout`, `sendTimeout`, and `SocketException`. Resolves them as `Response(statusCode: 503, data: {error, hint})` via `handler.resolve()`. Debugger no longer pauses on `_NativeSocket.lookup`.
+- [X] `dispatch_provider.dart` — Added explicit `503` check before the generic `>=400` branch. Shows `"Connection Error: Niramaya Engine is currently offline."` with ngrok hint. Simplified `catch` block — network errors no longer reach it. Removed unused `dart:io` and `dio` imports.
+- [X] `sos_trigger_screen.dart` — On `503`/network error: reverts to `'fuse'` phase with fresh countdown + SnackBar. On logic errors: shows `'error'` phase with RETRY button.
+
+### ERROR FLOW (after fix)
+```
+ngrok tunnel down
+  └─ Dio fires DioExceptionType.connectionError
+       └─ Interceptor.onError catches it
+            └─ handler.resolve(Response(503, {error, hint}))
+                 └─ dispatch_provider sees statusCode==503
+                      └─ state.error = "Connection Error..."
+                           └─ SOS screen reverts to fuse phase + SnackBar
+```
+
+### FILES CHANGED
+- `lib/data/api_client.dart`
+- `lib/providers/dispatch_provider.dart`
+
+---
+
+### SYSTEM_STATE
+- Dispatch Row: Stores full coordinate snapshot — `patient_lat/lng` + `hospital_lat/lng`
+- Map Integrity: Both apps read from the same `dispatches` columns via Realtime
+- Namespace: `hospitalNameProvider` collision resolved
+
+### COMPLETED_TASKS
+- [X] `main.go` — `handleDispatch` INSERT now writes all 4 coords atomically. Response JSON includes `hospital_lat/lng` + `patient_lat/lng`. `autoMigrate` adds all 4 columns via `ADD COLUMN IF NOT EXISTS`.
+- [X] `niramaya_app/lib/data/models/dispatch_model.dart` — `fromJson` maps `hospital_lat`, `hospital_lng`, `patient_lat`, `patient_lng` from response.
+- [X] `niramaya_driver/lib/screens/map_screen.dart` — `patientLocation` and `hospitalLocation` derived from `ref.watch(dispatchProvider)` in `build()`. Auto-pans to `patientLocation` on new dispatch. Removed stale `ref.read` getter methods.
+- [X] `niramaya_driver/lib/providers/dispatch_provider.dart` — Realtime filter uses `driver_id`. `_enrichDispatch` reads coords directly from the row (no RPC needed). `completeDispatch` uses `drivers` table.
+- [X] `niramaya_driver/lib/screens/home_screen.dart` — Added `hide hospitalNameProvider` to `dispatch_provider` import to resolve ambiguous import collision.
+
+### COORDINATE FLOW
+```
+SOS Request (lat/lng) → Go Backend
+  └─ PostGIS query → hospital_lat/lng
+  └─ INSERT dispatches (patient_lat, patient_lng, hospital_lat, hospital_lng)
+  └─ HTTP response includes all 4 coords
+       ├─ User App: DispatchModel.fromJson → map markers placed immediately
+       └─ Driver App: Supabase Realtime row → map markers placed immediately
+```
+
+### FILES CHANGED
+- `niramaya-backend/niramaya-logistics/main.go`
+- `niramaya_app/lib/data/models/dispatch_model.dart`
+- `niramaya_driver/lib/screens/map_screen.dart`
+- `niramaya_driver/lib/providers/dispatch_provider.dart`
+- `niramaya_driver/lib/screens/home_screen.dart`
+
+---
+
+### SYSTEM_STATE
+- Driver Alerts: Supabase Realtime subscribed by `driver_id` (unified schema)
+- Map Coordinates: Fetched from DB via hospital JOIN — no more mock coords
+- Location Broadcast: `drivers.last_location` updated every 5s when on duty
+- Dispatch Complete: Marks driver `is_on_duty=true` after trip ends
+
+### COMPLETED_TASKS
+- [X] `dispatch_provider.dart` (driver) — Realtime filter changed from `ambulance_id` → `driver_id`. `_enrichDispatch` does a JOIN to `hospitals` to fetch `ST_Y/ST_X` coords and hospital name, merging into `DispatchModel`. `completeDispatch` fixed: removed reference to deleted `staff_driver_details`, now updates `drivers.is_on_duty=true` after trip.
+- [X] `location_service.dart` — Added `startLocationBroadcast(driverId)`: `Timer.periodic(5s)` writes `POINT(lng lat)` to `drivers.last_location`. Added `stopLocationBroadcast()`.
+- [X] `home_screen.dart` — `_initDriverState` now calls `initRealtimeSubscription(profile.id)` (driver UUID, not ambulanceId). Starts broadcast if already on duty. `_toggleDuty` starts/stops broadcast on state change.
+
+### SYMMETRIC COORDINATE FLOW
+```
+User App writes GPS → dispatches.patient_lat / patient_lng
+Driver App reads   ← dispatches.patient_lat / patient_lng  (patient marker)
+Driver App writes  → drivers.last_location (POINT every 5s)
+User App reads     ← drivers.last_location  (ambulance marker)
+Hospital coords    ← hospitals.location (ST_Y/ST_X via JOIN)
+```
+
+### FILES CHANGED
+- `niramaya_driver/lib/providers/dispatch_provider.dart`
+- `niramaya_driver/lib/services/location_service.dart`
+- `niramaya_driver/lib/screens/home_screen.dart`
+
+---
 
 ### SYSTEM_STATE
 - Hospital Nodes: 7 Gwalior landmarks cycling in dispatch UI

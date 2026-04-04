@@ -70,8 +70,11 @@ class PatientNotifier extends StateNotifier<PatientState> {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final saved = await SupabaseClientHelper.upsertPatientRecord(record);
+      if (saved == null) {
+        state = state.copyWith(isLoading: false, error: 'Save failed: offline or network error.');
+        return false;
+      }
       state = PatientState(record: saved);
-      // Update cache
       final json = jsonEncode(saved.toJson());
       await _storage.write(key: AppConstants.storageCachedPatient, value: json);
       return true;

@@ -94,6 +94,19 @@ class DispatchNotifier extends StateNotifier<DispatchState> {
       _scanTimer?.cancel();
       debugPrint('[Dispatch] ← HTTP ${response.statusCode} body=${response.data}');
 
+      // 503 = synthetic response from Dio interceptor (engine offline / ngrok down)
+      if (response.statusCode == 503) {
+        final hint = response.data is Map
+            ? response.data['hint'] ?? ''
+            : '';
+        debugPrint('[Dispatch] ⚠ Engine offline (503). $hint');
+        state = state.copyWith(
+          isLoading: false,
+          error: 'Connection Error: Niramaya Engine is currently offline.',
+        );
+        return false;
+      }
+
       if (response.statusCode != null && response.statusCode! >= 400) {
         final msg = response.data is Map
             ? (response.data['error'] ?? 'Server error ${response.statusCode}')
@@ -121,7 +134,7 @@ class DispatchNotifier extends StateNotifier<DispatchState> {
       return true;
     } catch (e) {
       _scanTimer?.cancel();
-      debugPrint('[Dispatch] ❌ Exception: $e');
+      debugPrint('[Dispatch] ❌ Unexpected exception: $e');
       state = state.copyWith(
         isLoading: false,
         error: 'Dispatch failed: ${e.toString()}',

@@ -4,8 +4,6 @@ import '../core/theme.dart';
 import '../data/models/patient_record.dart';
 import '../providers/auth_provider.dart';
 import '../providers/patient_provider.dart';
-import '../providers/medication_provider.dart';
-// import '../data/models/medication_model.dart'; // Unused model import removed
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -37,7 +35,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     'other': 'Other',
     'prefer_not_to_say': 'Prefer not to say',
   };
-  static const _bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+  static const _bloodGroups = [
+    'A+',
+    'A-',
+    'B+',
+    'B-',
+    'AB+',
+    'AB-',
+    'O+',
+    'O-',
+  ];
 
   @override
   void initState() {
@@ -50,14 +57,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _conditionsCtrl = TextEditingController();
     _emergNameCtrl = TextEditingController();
     _emergPhoneCtrl = TextEditingController();
-
-    // Fetch medications
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final userId = ref.read(authProvider).user?.id;
-      if (userId != null) {
-        ref.read(medicationProvider.notifier).fetchMedications(userId);
-      }
-    });
   }
 
   @override
@@ -85,25 +84,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _conditionsCtrl.text = record?.existingConditions ?? '';
     _emergNameCtrl.text = record?.emergencyContactName ?? '';
     _emergPhoneCtrl.text = record?.emergencyContactPhone ?? '';
-  }
-
-  Future<void> _scanMeds() async {
-    final userId = ref.read(authProvider).user?.id;
-    if (userId == null) return;
-    final success = await ref.read(medicationProvider.notifier).scanAndSaveMedicine(userId);
-    if (!mounted) return;
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Medicine scanned and saved!'), backgroundColor: AppColors.success),
-      );
-    } else {
-      final err = ref.read(medicationProvider).error;
-      if (err != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: \$err'), backgroundColor: AppColors.emergency),
-        );
-      }
-    }
   }
 
   Future<void> _saveProfile() async {
@@ -173,20 +153,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
         ],
       ),
-      floatingActionButton: (!_isEditing && record != null) 
-          ? FloatingActionButton.extended(
-              onPressed: _scanMeds,
-              icon: const Icon(Icons.camera_alt),
-              label: const Text('Scan Meds'),
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            )
-          : null,
       body: patientState.isLoading
           ? const Center(child: CircularProgressIndicator())
           : _isEditing
-              ? _buildEditForm()
-              : _buildReadView(record),
+          ? _buildEditForm()
+          : _buildReadView(record),
     );
   }
 
@@ -196,8 +167,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.person_add_outlined,
-                size: 64, color: AppColors.textSecondary.withValues(alpha: 0.5)),
+            Icon(
+              Icons.person_add_outlined,
+              size: 64,
+              color: AppColors.textSecondary.withValues(alpha: 0.5),
+            ),
             const SizedBox(height: 16),
             const Text(
               'No profile yet',
@@ -262,7 +236,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ),
                         const SizedBox(height: 4),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
                           decoration: BoxDecoration(
                             color: record.consentGiven
                                 ? AppColors.success.withValues(alpha: 0.1)
@@ -270,7 +247,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
-                            record.consentGiven ? '✓ Consent Given' : '✗ No Consent',
+                            record.consentGiven
+                                ? '✓ Consent Given'
+                                : '✗ No Consent',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
@@ -296,12 +275,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               child: Column(
                 children: [
                   _infoRow('Age', record.age?.toString() ?? 'Not set'),
-                  _infoRow('Phone', ref.watch(authProvider).user?.phone ?? 'Not set'),
-                  _infoRow('Email', ref.watch(authProvider).user?.email ?? 'Not set'),
+                  _infoRow(
+                    'Phone',
+                    ref.watch(authProvider).user?.phone ?? 'Not set',
+                  ),
+                  _infoRow(
+                    'Email',
+                    ref.watch(authProvider).user?.email ?? 'Not set',
+                  ),
                   _infoRow('Gender', _genderLabels[record.gender] ?? 'Not set'),
                   _infoRow('Blood Group', record.bloodGroup ?? 'Not set'),
                   _infoRow('Allergies', record.allergies ?? 'None'),
-                  _infoRow('Existing Conditions', record.existingConditions ?? 'None'),
+                  _infoRow(
+                    'Existing Conditions',
+                    record.existingConditions ?? 'None',
+                  ),
                 ],
               ),
             ),
@@ -317,7 +305,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.emergency, color: AppColors.emergency, size: 20),
+                      const Icon(
+                        Icons.emergency,
+                        color: AppColors.emergency,
+                        size: 20,
+                      ),
                       const SizedBox(width: 8),
                       const Text(
                         'Emergency Contact',
@@ -336,10 +328,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          
-          // Current Medications Card
-          _buildMedicationsCard(),
-          const SizedBox(height: 16),
 
           // Edit button
           SizedBox(
@@ -355,87 +343,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ),
           const SizedBox(height: 80), // Fab space
         ],
-      ),
-    );
-  }
-
-  Widget _buildMedicationsCard() {
-    final medState = ref.watch(medicationProvider);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.medication, color: AppColors.primary, size: 20),
-                const SizedBox(width: 8),
-                const Text(
-                  'Current Medications',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Spacer(),
-                if (medState.isScanning)
-                  const SizedBox(
-                    width: 16, height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (medState.isLoading)
-              const Center(child: Padding(
-                padding: EdgeInsets.all(16.0),
-                child: CircularProgressIndicator(),
-              ))
-            else if (medState.medications.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Center(
-                  child: Text(
-                    'No medications logged.\nTap "Scan Meds" to add.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textSecondary),
-                  ),
-                ),
-              )
-            else
-              ListView.separated(
-                physics: const NeverScrollableScrollPhysics(),
-                shrinkWrap: true,
-                itemCount: medState.medications.length,
-                separatorBuilder: (_, _) => const Divider(),
-                itemBuilder: (context, index) {
-                  final med = medState.medications[index];
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(med.medName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (med.dosage != null) Text('Dosage: ${med.dosage}'),
-                        if (med.usage != null) Text('Usage: ${med.usage}'),
-                        if (med.precautions != null) Text('Warnings: ${med.precautions}', style: TextStyle(color: AppColors.emergency, fontSize: 12)),
-                      ],
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline, color: Colors.grey),
-                      onPressed: () {
-                        if (med.id != null) {
-                          ref.read(medicationProvider.notifier).deleteMedication(med.id!);
-                        }
-                      },
-                    ),
-                  );
-                },
-              ),
-          ],
-        ),
       ),
     );
   }
@@ -535,7 +442,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
             ),
 
-
             DropdownButtonFormField<String>(
               initialValue: _selectedGender,
               decoration: InputDecoration(
@@ -545,10 +451,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 filled: true,
               ),
               items: _genders
-                  .map((g) => DropdownMenuItem(
-                        value: g,
-                        child: Text(_genderLabels[g] ?? g),
-                      ))
+                  .map(
+                    (g) => DropdownMenuItem(
+                      value: g,
+                      child: Text(_genderLabels[g] ?? g),
+                    ),
+                  )
                   .toList(),
               onChanged: null,
             ),

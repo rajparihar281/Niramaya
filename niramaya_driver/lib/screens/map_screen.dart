@@ -4,6 +4,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart';
+import 'package:http/retry.dart';
 import 'package:latlong2/latlong.dart';
 import '../core/theme.dart';
 import '../models/dispatch_model.dart';
@@ -28,25 +30,12 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   StreamSubscription? _positionSub;
   bool _isSatellite = false;
   Timer? _ttsTimer;
+  LatLng? _lastPatientLocation; // track to auto-pan once on new dispatch
 
-  // Gwalior base coordinates — overridden by live dispatch data when available
   static const LatLng _gwaliorCenter = LatLng(26.218, 78.182);
 
-  LatLng get _patientLocation {
-    final d = ref.read(dispatchProvider).activeDispatch;
-    if (d?.patientLat != null && d?.patientLng != null) {
-      return LatLng(d!.patientLat!, d.patientLng!);
-    }
-    return const LatLng(26.2183, 78.1828); // Gwalior city centre fallback
-  }
-
-  LatLng get _hospitalLocation {
-    final d = ref.read(dispatchProvider).activeDispatch;
-    if (d?.hospitalLat != null && d?.hospitalLng != null) {
-      return LatLng(d!.hospitalLat!, d.hospitalLng!);
-    }
-    return const LatLng(26.2124, 78.1772); // Gwalior hospital fallback
-  }
+  // Coords are derived from watched dispatch state in build() — not getters
+  // to ensure reactivity when the dispatch row updates.
 
   @override
   void initState() {
@@ -91,9 +80,15 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final isPickupPhase = dispatch.status == DispatchStatus.assigned ||
         dispatch.status == DispatchStatus.enRoute;
 
-    final destination = isPickupPhase ? _patientLocation : _hospitalLocation;
-    final distKm =
-        LocationService.distanceKm(_currentPosition!, destination);
+    final patientLoc = (dispatch.patientLat != null && dispatch.patientLng != null)
+        ? LatLng(dispatch.patientLat!, dispatch.patientLng!)
+        : const LatLng(26.2183, 78.1828);
+    final hospitalLoc = (dispatch.hospitalLat != null && dispatch.hospitalLng != null)
+        ? LatLng(dispatch.hospitalLat!, dispatch.hospitalLng!)
+        : const LatLng(26.2124, 78.1772);
+
+    final destination = isPickupPhase ? patientLoc : hospitalLoc;
+    final distKm = LocationService.distanceKm(_currentPosition!, destination);
 
     if (isPickupPhase) {
       _ttsService.announcePhase(
@@ -109,14 +104,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       );
     }
 
-    // Periodic announcements
     _ttsTimer?.cancel();
     _ttsTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (_currentPosition == null) return;
-      final bearing =
-          LocationService.bearingDirection(_currentPosition!, destination);
-      final dist =
-          LocationService.distanceKm(_currentPosition!, destination);
+      final bearing = LocationService.bearingDirection(_currentPosition!, destination);
+      final dist = LocationService.distanceKm(_currentPosition!, destination);
       _ttsService.speak(
         'Continue for ${dist.toStringAsFixed(1)} kilometers. Heading $bearing.',
       );
@@ -136,10 +128,28 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   Widget build(BuildContext context) {
     final dispatchState = ref.watch(dispatchProvider);
     final dispatch = dispatchState.activeDispatch;
+
+    // ── Symmetric coordinates — single source of truth: dispatches table ──
+    final patientLocation = (dispatch?.patientLat != null && dispatch?.patientLng != null)
+        ? LatLng(dispatch!.patientLat!, dispatch.patientLng!)
+        : const LatLng(26.2183, 78.1828);
+
+    final hospitalLocation = (dispatch?.hospitalLat != null && dispatch?.hospitalLng != null)
+        ? LatLng(dispatch!.hospitalLat!, dispatch.hospitalLng!)
+        : const LatLng(26.2124, 78.1772);
+
+    // Auto-pan to patient location when a new dispatch arrives
+    if (dispatch != null && patientLocation != _lastPatientLocation) {
+      _lastPatientLocation = patientLocation;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _mapController.move(patientLocation, 14);
+      });
+    }
+
     final isPickupPhase = dispatch != null &&
         (dispatch.status == DispatchStatus.assigned ||
             dispatch.status == DispatchStatus.enRoute);
-    final destination = isPickupPhase ? _patientLocation : _hospitalLocation;
+    final destination = isPickupPhase ? patientLocation : hospitalLocation;
 
     final distKm = _currentPosition != null
         ? LocationService.distanceKm(_currentPosition!, destination)
@@ -163,6 +173,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
                     : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.niramaya.driver',
+                maxNativeZoom: 18,
+                tileProvider: NetworkTileProvider(
+                  httpClient: RetryClient(Client()),
+                ),
               ),
 
               // Double-leg route:
@@ -171,15 +185,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               if (_currentPosition != null)
                 PolylineLayer(
                   polylines: [
-                    // Leg 1: current → patient (always shown)
                     Polyline(
-                      points: [_currentPosition!, _patientLocation],
+                      points: [_currentPosition!, patientLocation],
                       color: AppColors.emergencyBlue,
                       strokeWidth: 4,
                     ),
-                    // Leg 2: patient → hospital (shown dimmed until pickup)
                     Polyline(
-                      points: [_patientLocation, _hospitalLocation],
+                      points: [patientLocation, hospitalLocation],
                       color: AppColors.success.withValues(
                         alpha: isPickupPhase ? 0.35 : 1.0,
                       ),
@@ -220,9 +232,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                       ),
                     ),
 
-                  // Patient marker (always shown)
+                  // Patient marker
                   Marker(
-                    point: _patientLocation,
+                    point: patientLocation,
                     width: 44,
                     height: 44,
                     child: Container(
@@ -245,9 +257,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     ),
                   ),
 
-                  // Hospital marker (always shown)
+                  // Hospital marker
                   Marker(
-                    point: _hospitalLocation,
+                    point: hospitalLocation,
                     width: 44,
                     height: 44,
                     child: Container(

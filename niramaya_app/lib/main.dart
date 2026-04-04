@@ -59,7 +59,7 @@ class _NiramayaAppState extends State<NiramayaApp> {
       navigatorKey: _navigatorKey,
       title: 'Niramaya',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
+      theme: AppTheme.darkTheme,
       initialRoute: widget.hardwareSosTrigger ? '/sos-trigger' : '/',
       routes: {
         '/': (context) => const SplashScreen(),

@@ -2,11 +2,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart';
+import 'package:http/retry.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:niramaya_shared/realtime_service.dart';
 import '../core/constants.dart';
 import '../core/theme.dart';
 import '../data/models/dispatch_model.dart';
-import '../data/supabase_client.dart';
 import '../providers/dispatch_provider.dart';
 import '../widgets/dispatch_panel.dart';
 
@@ -22,7 +24,7 @@ class _DispatchTrackingScreenState
     extends ConsumerState<DispatchTrackingScreen> {
   late MapController _mapController;
   Timer? _pollTimer;
-  Timer? _simTimer;
+  StreamSubscription<DriverLocation>? _driverSub;
 
   LatLng? _userLocation;
   LatLng? _hospitalLocation;
@@ -54,93 +56,47 @@ class _DispatchTrackingScreenState
 
     if (userLat != null && userLng != null) {
       _userLocation = LatLng(userLat, userLng);
+    } else if (_dispatch?.patientLat != null && _dispatch?.patientLng != null) {
+      _userLocation = LatLng(_dispatch!.patientLat!, _dispatch!.patientLng!);
     }
 
-    // Try to get hospital location
-    _fetchHospitalLocation();
+    // Hospital coords come directly from the dispatch response
+    if (_dispatch?.hospitalLat != null && _dispatch?.hospitalLng != null) {
+      _hospitalLocation =
+          LatLng(_dispatch!.hospitalLat!, _dispatch!.hospitalLng!);
+      _ambulanceLocation = _hospitalLocation;
+    } else if (_userLocation != null) {
+      // Fallback only if backend omitted coords
+      _hospitalLocation = LatLng(
+        _userLocation!.latitude + 0.018,
+        _userLocation!.longitude + 0.015,
+      );
+      _ambulanceLocation = _hospitalLocation;
+    }
 
-    // Start polling dispatch status
+    // Subscribe to live driver GPS via Supabase realtime
+    final driverId = _dispatch?.driverId;
+    if (driverId != null && driverId.isNotEmpty) {
+      _driverSub = ref
+          .read(realTimeServiceProvider)
+          .driverLocationStream(driverId)
+          .listen((loc) {
+        if (loc.location != null && mounted) {
+          setState(() => _ambulanceLocation = loc.location);
+        }
+      });
+    }
+
+    // Poll dispatch status
     _pollTimer = Timer.periodic(AppConstants.dispatchPollInterval, (_) {
       ref.read(dispatchProvider.notifier).pollStatus();
-    });
-
-    // Start ambulance simulation
-    _simTimer = Timer.periodic(AppConstants.ambulanceSimInterval, (_) {
-      _simulateAmbulanceMovement();
-    });
-  }
-
-  Future<void> _fetchHospitalLocation() async {
-    if (_dispatch == null) return;
-    try {
-      final hospitalData =
-          await SupabaseClientHelper.findHospitalByName(_dispatch!.hospital);
-      if (hospitalData != null && mounted) {
-        // Hospital location is stored as PostGIS geography
-        // Try to parse from the response — the location might come as WKT or as lat/lng
-        // For Supabase REST, geography columns are returned as GeoJSON or as text
-        // We'll try a fallback approach
-        final location = hospitalData['location'];
-        if (location is String && location.contains('POINT')) {
-          // POINT(lng lat) format
-          final match =
-              RegExp(r'POINT\(([^ ]+) ([^ ]+)\)').firstMatch(location);
-          if (match != null) {
-            final lng = double.tryParse(match.group(1) ?? '');
-            final lat = double.tryParse(match.group(2) ?? '');
-            if (lat != null && lng != null) {
-              setState(() {
-                _hospitalLocation = LatLng(lat, lng);
-                _ambulanceLocation = _hospitalLocation;
-              });
-              return;
-            }
-          }
-        }
-
-        // If location parsing fails, place hospital ~2km from user
-        if (_userLocation != null) {
-          setState(() {
-            _hospitalLocation = LatLng(
-              _userLocation!.latitude + 0.018,
-              _userLocation!.longitude + 0.015,
-            );
-            _ambulanceLocation = _hospitalLocation;
-          });
-        }
-      }
-    } catch (_) {
-      // Fallback: place hospital nearby
-      if (_userLocation != null) {
-        setState(() {
-          _hospitalLocation = LatLng(
-            _userLocation!.latitude + 0.018,
-            _userLocation!.longitude + 0.015,
-          );
-          _ambulanceLocation = _hospitalLocation;
-        });
-      }
-    }
-  }
-
-  void _simulateAmbulanceMovement() {
-    if (_ambulanceLocation == null || _userLocation == null) return;
-
-    setState(() {
-      // Move 10% closer to user each tick
-      _ambulanceLocation = LatLng(
-        _ambulanceLocation!.latitude +
-            (_userLocation!.latitude - _ambulanceLocation!.latitude) * 0.1,
-        _ambulanceLocation!.longitude +
-            (_userLocation!.longitude - _ambulanceLocation!.longitude) * 0.1,
-      );
     });
   }
 
   @override
   void dispose() {
     _pollTimer?.cancel();
-    _simTimer?.cancel();
+    _driverSub?.cancel();
     super.dispose();
   }
 
@@ -161,13 +117,11 @@ class _DispatchTrackingScreenState
       );
     }
 
-    // Map center
     final center = _userLocation ?? const LatLng(20.5937, 78.9629);
 
     return Scaffold(
       body: Stack(
         children: [
-          // Map
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
@@ -178,10 +132,25 @@ class _DispatchTrackingScreenState
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.niramaya.app',
+                maxNativeZoom: 18,
+                tileProvider: NetworkTileProvider(
+                  httpClient: RetryClient(Client()),
+                ),
               ),
+              // Route line: ambulance → user
+              if (_ambulanceLocation != null && _userLocation != null)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: [_ambulanceLocation!, _userLocation!],
+                      color: AppColors.accent.withValues(alpha: 0.6),
+                      strokeWidth: 3,
+                    ),
+                  ],
+                ),
               MarkerLayer(
                 markers: [
-                  // User marker (blue dot)
+                  // Patient (user)
                   if (_userLocation != null)
                     Marker(
                       point: _userLocation!,
@@ -202,7 +171,7 @@ class _DispatchTrackingScreenState
                         ),
                       ),
                     ),
-                  // Hospital marker (red cross)
+                  // Hospital
                   if (_hospitalLocation != null)
                     Marker(
                       point: _hospitalLocation!,
@@ -226,7 +195,7 @@ class _DispatchTrackingScreenState
                         ),
                       ),
                     ),
-                  // Ambulance marker (moving)
+                  // Ambulance (live position)
                   if (_ambulanceLocation != null)
                     Marker(
                       point: _ambulanceLocation!,
@@ -252,17 +221,6 @@ class _DispatchTrackingScreenState
                     ),
                 ],
               ),
-              // Line between user and hospital
-              if (_userLocation != null && _hospitalLocation != null)
-                PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: [_userLocation!, _hospitalLocation!],
-                      color: AppColors.accent.withValues(alpha: 0.6),
-                      strokeWidth: 3,
-                    ),
-                  ],
-                ),
             ],
           ),
 

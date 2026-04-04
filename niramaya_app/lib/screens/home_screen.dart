@@ -15,13 +15,29 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _headerController;
+  late Animation<double> _headerFade;
+
   @override
   void initState() {
     super.initState();
+    _headerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..forward();
+    _headerFade = CurvedAnimation(parent: _headerController, curve: Curves.easeOut);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadPatientData();
     });
+  }
+
+  @override
+  void dispose() {
+    _headerController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadPatientData() async {
@@ -32,9 +48,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _handleSosTrigger() async {
-    // 1. Get location
     setState(() {});
-
     try {
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
@@ -47,7 +61,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           return;
         }
       }
-
       if (permission == LocationPermission.deniedForever) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -55,24 +68,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         );
         return;
       }
-
-      // Show loading
       if (!mounted) return;
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (_) => const Center(
-          child: Card(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Requesting emergency help...'),
-                ],
-              ),
+        barrierColor: Colors.black87,
+        builder: (_) => Center(
+          child: Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Requesting emergency help...',
+                  style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                ),
+              ],
             ),
           ),
         ),
@@ -81,9 +106,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
-
       final abhaId = ref.read(authProvider).user?.abhaId ?? '';
-
       final success = await ref.read(dispatchProvider.notifier).triggerDispatch(
             patientId: abhaId,
             latitude: position.latitude,
@@ -91,7 +114,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           );
 
       if (!mounted) return;
-      Navigator.pop(context); // dismiss loading
+      Navigator.pop(context);
 
       if (success) {
         final dispatch = ref.read(dispatchProvider).dispatch;
@@ -106,7 +129,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      // Dismiss loading if shown
       if (Navigator.canPop(context)) Navigator.pop(context);
       _showErrorDialog(e.toString());
     }
@@ -115,29 +137,86 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _showErrorDialog(String message) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Row(
-          children: [
-            Icon(Icons.error_outline, color: AppColors.emergency),
-            SizedBox(width: 8),
-            Text('Dispatch Failed'),
-          ],
+      builder: (context) => Dialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: AppColors.border),
         ),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: AppColors.emergency.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(Icons.error_outline, color: AppColors.emergency, size: 30),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Dispatch Failed',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message,
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('OK'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF00C6AE), Color(0xFF0EA5E9)],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            Navigator.pop(context);
+                            _handleSosTrigger();
+                          },
+                          borderRadius: BorderRadius.circular(12),
+                          child: const Center(
+                            child: Text(
+                              'Retry',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _handleSosTrigger();
-            },
-            child: const Text('Retry'),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -148,193 +227,346 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final patientState = ref.watch(patientProvider);
     final name = patientState.record?.fullName;
     final consentGiven = patientState.record?.consentGiven ?? false;
-    final greeting = name != null && name.isNotEmpty ? 'Hello, $name' : 'Hello';
+    final greeting = name != null && name.isNotEmpty ? 'Hello, $name 👋' : 'Hello 👋';
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Niramaya'),
-      ),
+      backgroundColor: AppColors.background,
       drawer: const AppDrawer(),
       body: RefreshIndicator(
+        color: AppColors.primary,
+        backgroundColor: AppColors.surface,
         onRefresh: _loadPatientData,
-        child: SingleChildScrollView(
+        child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Greeting Card
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 24,
-                        backgroundColor: AppColors.accent.withValues(alpha: 0.15),
-                        child: const Icon(Icons.person, color: AppColors.accent, size: 28),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              greeting,
-                              style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Welcome to Niramaya Emergency Services',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+          slivers: [
+            // Gradient App Bar
+            SliverAppBar(
+              expandedHeight: 120,
+              floating: false,
+              pinned: true,
+              backgroundColor: AppColors.background,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              leading: Builder(
+                builder: (context) => IconButton(
+                  icon: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceElevated,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: const Icon(Icons.menu, color: AppColors.textPrimary, size: 20),
                   ),
+                  onPressed: () => Scaffold.of(context).openDrawer(),
                 ),
               ),
-              const SizedBox(height: 8),
-
-              // Consent Status Card
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Icon(
-                        consentGiven
-                            ? Icons.check_circle_outline
-                            : Icons.warning_amber_rounded,
-                        color: consentGiven ? AppColors.success : AppColors.warning,
-                        size: 24,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Health Data Consent',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              consentGiven
-                                  ? 'Your data is shared with hospitals during emergencies'
-                                  : 'Set up your consent in settings',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: consentGiven
-                              ? AppColors.success.withValues(alpha: 0.1)
-                              : AppColors.warning.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          consentGiven ? 'Active' : 'Pending',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: consentGiven ? AppColors.success : AppColors.warning,
-                          ),
-                        ),
-                      ),
-                    ],
+              flexibleSpace: FlexibleSpaceBar(
+                background: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF0D1B2E), AppColors.background],
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              // Profile completion prompt
-              if (name == null || name.isEmpty)
-                Card(
-                  color: AppColors.accent.withValues(alpha: 0.05),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => Navigator.pushNamed(context, '/profile'),
+                  child: SafeArea(
                     child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.edit_note, color: AppColors.accent, size: 24),
-                          const SizedBox(width: 12),
-                          const Expanded(
+                          FadeTransition(
+                            opacity: _headerFade,
                             child: Text(
-                              'Complete your health profile for faster emergency response',
-                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                              greeting,
+                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                    color: AppColors.textPrimary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                             ),
                           ),
-                          const Icon(Icons.chevron_right, color: AppColors.accent),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Niramaya Emergency Services',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
                         ],
                       ),
                     ),
                   ),
                 ),
+              ),
+            ),
 
-              const SizedBox(height: 24),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  // Consent Status Card
+                  _ConsentCard(consentGiven: consentGiven),
+                  const SizedBox(height: 12),
 
-              // SOS Button
-              SosButton(onTriggered: _handleSosTrigger),
+                  // Profile completion prompt
+                  if (name == null || name.isEmpty)
+                    _ProfilePromptCard(),
 
-              const SizedBox(height: 32),
+                  const SizedBox(height: 24),
 
-              // How it works section
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8),
-                child: Text(
-                  'How it works',
+                  // SOS Section label
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 3,
+                          height: 20,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [AppColors.emergency, Color(0xFFCC003B)],
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        const Text(
+                          'Emergency SOS',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      'Hold the button for 1.5 seconds to request emergency help',
+                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // SOS Button
+                  SosButton(
+                    onDispatchAssigned: (_) =>
+                        Navigator.pushNamed(context, '/sos-trigger'),
+                  ),
+
+                  const SizedBox(height: 36),
+
+                  // How it works
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 3,
+                          height: 20,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [AppColors.primary, Color(0xFF0EA5E9)],
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        const Text(
+                          'How it works',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(child: _HowItWorksCard(
+                        icon: Icons.touch_app,
+                        title: 'Press SOS',
+                        subtitle: 'Long-press the emergency button',
+                        color: AppColors.emergencyRed,
+                        step: '1',
+                      )),
+                      const SizedBox(width: 10),
+                      Expanded(child: _HowItWorksCard(
+                        icon: Icons.send_rounded,
+                        title: 'Alert Sent',
+                        subtitle: 'Nearest hospital is notified',
+                        color: AppColors.primary,
+                        step: '2',
+                      )),
+                      const SizedBox(width: 10),
+                      Expanded(child: _HowItWorksCard(
+                        icon: Icons.local_hospital,
+                        title: 'Help Arrives',
+                        subtitle: 'Ambulance dispatched to you',
+                        color: AppColors.success,
+                        step: '3',
+                      )),
+                    ],
+                  ),
+                ]),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ConsentCard extends StatelessWidget {
+  final bool consentGiven;
+  const _ConsentCard({required this.consentGiven});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: consentGiven
+              ? AppColors.success.withValues(alpha: 0.3)
+              : AppColors.warning.withValues(alpha: 0.3),
+        ),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: (consentGiven ? AppColors.success : AppColors.warning)
+                  .withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              consentGiven ? Icons.verified_user : Icons.warning_amber_rounded,
+              color: consentGiven ? AppColors.success : AppColors.warning,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Health Data Consent',
                   style: TextStyle(
-                    fontSize: 18,
+                    fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary,
                   ),
                 ),
+                const SizedBox(height: 2),
+                Text(
+                  consentGiven
+                      ? 'Your data is shared with hospitals during emergencies'
+                      : 'Set up your consent in settings',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: (consentGiven ? AppColors.success : AppColors.warning)
+                  .withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: (consentGiven ? AppColors.success : AppColors.warning)
+                    .withValues(alpha: 0.3),
               ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(child: _HowItWorksCard(
-                    icon: Icons.touch_app,
-                    title: 'Press SOS',
-                    subtitle: 'Long-press the emergency button',
-                    color: AppColors.emergency,
-                  )),
-                  Expanded(child: _HowItWorksCard(
-                    icon: Icons.send_rounded,
-                    title: 'Alert Sent',
-                    subtitle: 'Nearest hospital is notified',
-                    color: AppColors.accent,
-                  )),
-                  Expanded(child: _HowItWorksCard(
-                    icon: Icons.local_hospital,
-                    title: 'Help Arrives',
-                    subtitle: 'Ambulance dispatched to you',
-                    color: AppColors.success,
-                  )),
-                ],
+            ),
+            child: Text(
+              consentGiven ? 'Active' : 'Pending',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: consentGiven ? AppColors.success : AppColors.warning,
               ),
-              const SizedBox(height: 24),
-            ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfilePromptCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
+        gradient: LinearGradient(
+          colors: [
+            AppColors.primary.withValues(alpha: 0.06),
+            Colors.transparent,
+          ],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => Navigator.pushNamed(context, '/profile'),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF00C6AE), Color(0xFF0EA5E9)],
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.edit_note, color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Complete your health profile for faster emergency response',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: AppColors.textPrimary),
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: AppColors.primary),
+              ],
+            ),
           ),
         ),
       ),
@@ -347,46 +579,81 @@ class _HowItWorksCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final Color color;
+  final String step;
 
   const _HowItWorksCard({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.color,
+    required this.step,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 22),
               ),
-              child: Icon(icon, color: color, size: 22),
+              Positioned(
+                top: -4,
+                right: -4,
+                child: Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      step,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
             ),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              style: TextStyle(fontSize: 10, color: AppColors.textSecondary),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-            ),
-          ],
-        ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 3),
+          Text(
+            subtitle,
+            style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+          ),
+        ],
       ),
     );
   }

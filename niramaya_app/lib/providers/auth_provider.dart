@@ -69,10 +69,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // Strip hyphens for storage/query
       final cleanAbha = abhaId.replaceAll('-', '');
 
-      // Try to find existing user
       // Try to find existing user or create a new one
-      UserModel user = await SupabaseClientHelper.findUserByAbha(cleanAbha) ?? 
-          await SupabaseClientHelper.createUser(cleanAbha);
+      final existing = await SupabaseClientHelper.findUserByAbha(cleanAbha);
+      final UserModel? user = existing ?? await SupabaseClientHelper.createUser(cleanAbha);
+
+      if (user == null) {
+        state = state.copyWith(
+          isLoading: false,
+          error: 'Could not create account. Check your connection.',
+        );
+        return false;
+      }
 
       // Persist session
       await _storage.write(key: AppConstants.storageUserId, value: user.id);

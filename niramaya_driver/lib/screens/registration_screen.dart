@@ -10,16 +10,16 @@ class RegistrationScreen extends ConsumerStatefulWidget {
   const RegistrationScreen({super.key});
 
   @override
-  ConsumerState<RegistrationScreen> createState() =>
-      _RegistrationScreenState();
+  ConsumerState<RegistrationScreen> createState() => _RegistrationScreenState();
 }
 
-class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameCtrl = TextEditingController();
+class _RegistrationScreenState extends ConsumerState<RegistrationScreen>
+    with SingleTickerProviderStateMixin {
+  final _formKey     = GlobalKey<FormState>();
+  final _nameCtrl    = TextEditingController();
   final _staffIdCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
+  final _phoneCtrl   = TextEditingController();
+  final _emailCtrl   = TextEditingController();
   final _licenseCtrl = TextEditingController();
   final _experienceCtrl = TextEditingController();
 
@@ -29,6 +29,8 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
   bool _isLoading = false;
   List<HospitalModel> _hospitals = [];
 
+  late AnimationController _scrollHintController;
+
   final List<String> _bloodGroups = [
     'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'
   ];
@@ -36,6 +38,10 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollHintController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
     _fetchHospitals();
   }
 
@@ -57,35 +63,22 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
     if (!_termsAccepted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('You must accept the Terms of Service'),
-          backgroundColor: AppColors.danger,
-        ),
-      );
+      _showError('You must accept the Terms of Service');
       return;
     }
     if (_selectedHospitalId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a hospital'),
-          backgroundColor: AppColors.danger,
-        ),
-      );
+      _showError('Please select a hospital');
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      // Single atomic insert into unified drivers table
       await SupabaseService.client.from('drivers').insert({
         'staff_id': _staffIdCtrl.text.trim(),
         'full_name': _nameCtrl.text.trim(),
         'phone': _phoneCtrl.text.trim(),
-        'email': _emailCtrl.text.trim().isEmpty
-            ? null
-            : _emailCtrl.text.trim(),
+        'email': _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(),
         'license_number': _licenseCtrl.text.trim(),
         'years_experience': int.tryParse(_experienceCtrl.text.trim()) ?? 0,
         'blood_group': _selectedBloodGroup,
@@ -101,13 +94,23 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Registration failed: ${e.toString()}'),
-          backgroundColor: AppColors.danger,
-        ),
-      );
+      _showError('Registration failed: ${e.toString()}');
     }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: AppColors.danger,
+      ),
+    );
   }
 
   @override
@@ -118,6 +121,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     _emailCtrl.dispose();
     _licenseCtrl.dispose();
     _experienceCtrl.dispose();
+    _scrollHintController.dispose();
     super.dispose();
   }
 
@@ -127,71 +131,168 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.background,
-        title: const Text('REGISTER AS DRIVER'),
+        title: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+          ),
+          child: const Text(
+            'DRIVER REGISTRATION',
+            style: TextStyle(
+              color: AppColors.primary,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.5,
+            ),
+          ),
+        ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.textPrimary, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _sectionLabel('PERSONAL INFORMATION'),
-                const SizedBox(height: 12),
-                _buildField('Full Name', _nameCtrl, Icons.person,
-                    validator: _required),
-                _buildField('Staff ID', _staffIdCtrl, Icons.badge,
-                    validator: _required,
-                    caps: true,
-                    hint: 'Choose your staff ID'),
-                _buildField('Phone', _phoneCtrl, Icons.phone,
-                    validator: _required, keyboard: TextInputType.phone),
-                _buildField('Email', _emailCtrl, Icons.email,
-                    keyboard: TextInputType.emailAddress),
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            children: [
+              // Intro card
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.primary.withValues(alpha: 0.08),
+                      AppColors.primary.withValues(alpha: 0.03),
+                    ],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF00C6AE), Color(0xFF0EA5E9)],
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.local_shipping, color: Colors.white, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Join Niramaya as a verified ambulance driver. Your account will be reviewed by a hospital admin.',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
-                const SizedBox(height: 24),
-                _sectionLabel('PROFESSIONAL DETAILS'),
-                const SizedBox(height: 12),
-                _buildField('License Number', _licenseCtrl, Icons.credit_card,
-                    validator: _required),
-                _buildField(
-                    'Years of Experience', _experienceCtrl, Icons.timer,
-                    keyboard: TextInputType.number),
+              const SizedBox(height: 20),
 
-                DropdownButtonFormField<String>(
-                  initialValue: _selectedBloodGroup,
-                  dropdownColor: AppColors.card,
-                  style: const TextStyle(
-                      color: AppColors.textPrimary, fontSize: 16),
-                  decoration: const InputDecoration(
+              // Section: Personal
+              _sectionHeader('PERSONAL INFORMATION', Icons.person_rounded),
+              const SizedBox(height: 14),
+              _buildField('Full Name', _nameCtrl, Icons.person_rounded,
+                  validator: _required),
+              _buildField(
+                'Staff ID',
+                _staffIdCtrl,
+                Icons.badge_rounded,
+                validator: _required,
+                caps: true,
+                hint: 'e.g. DEMO-DRV-001',
+              ),
+              _buildField(
+                'Phone',
+                _phoneCtrl,
+                Icons.phone_rounded,
+                validator: _required,
+                keyboard: TextInputType.phone,
+              ),
+              _buildField(
+                'Email',
+                _emailCtrl,
+                Icons.email_rounded,
+                keyboard: TextInputType.emailAddress,
+              ),
+
+              const SizedBox(height: 8),
+
+              // Section: Professional
+              _sectionHeader('PROFESSIONAL DETAILS', Icons.verified_user_rounded),
+              const SizedBox(height: 14),
+              _buildField(
+                'License Number',
+                _licenseCtrl,
+                Icons.credit_card_rounded,
+                validator: _required,
+              ),
+              _buildField(
+                'Years of Experience',
+                _experienceCtrl,
+                Icons.timer_rounded,
+                keyboard: TextInputType.number,
+              ),
+
+              // Blood group dropdown
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: DropdownButtonFormField<String>(
+                  value: _selectedBloodGroup,
+                  dropdownColor: AppColors.cardElevated,
+                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                  decoration: InputDecoration(
                     labelText: 'Blood Group',
-                    prefixIcon:
-                        Icon(Icons.bloodtype, color: AppColors.textMuted),
+                    prefixIcon: Container(
+                      margin: const EdgeInsets.all(10),
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: AppColors.danger.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.bloodtype_rounded, color: AppColors.danger, size: 17),
+                    ),
                   ),
                   items: _bloodGroups
-                      .map((bg) => DropdownMenuItem(
-                            value: bg,
-                            child: Text(bg),
-                          ))
+                      .map((bg) => DropdownMenuItem(value: bg, child: Text(bg)))
                       .toList(),
                   onChanged: (v) => setState(() => _selectedBloodGroup = v),
                 ),
-                const SizedBox(height: 16),
+              ),
 
-                DropdownButtonFormField<String>(
-                  initialValue: _selectedHospitalId,
-                  dropdownColor: AppColors.card,
-                  style: const TextStyle(
-                      color: AppColors.textPrimary, fontSize: 16),
-                  decoration: const InputDecoration(
+              // Hospital dropdown
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: DropdownButtonFormField<String>(
+                  value: _selectedHospitalId,
+                  dropdownColor: AppColors.cardElevated,
+                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                  decoration: InputDecoration(
                     labelText: 'Hospital',
-                    prefixIcon: Icon(Icons.local_hospital,
-                        color: AppColors.textMuted),
+                    prefixIcon: Container(
+                      margin: const EdgeInsets.all(10),
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: AppColors.driverBlue.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.local_hospital_rounded, color: AppColors.driverBlue, size: 17),
+                    ),
                   ),
                   items: _hospitals
                       .map((h) => DropdownMenuItem(
@@ -204,7 +305,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                                   h.name,
                                   style: const TextStyle(
                                     color: AppColors.textPrimary,
-                                    fontSize: 15,
+                                    fontSize: 14,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -212,8 +313,8 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                                   Text(
                                     h.address!,
                                     style: const TextStyle(
-                                      color: AppColors.textSecondary,
-                                      fontSize: 12,
+                                      color: AppColors.textMuted,
+                                      fontSize: 11,
                                     ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -224,84 +325,130 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                   onChanged: (v) => setState(() => _selectedHospitalId = v),
                   validator: (v) => v == null ? 'Select a hospital' : null,
                 ),
-                const SizedBox(height: 24),
+              ),
 
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.card,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Checkbox(
-                        value: _termsAccepted,
-                        onChanged: (v) =>
-                            setState(() => _termsAccepted = v ?? false),
-                        activeColor: AppColors.primary,
-                      ),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: Text(
-                            'I certify all information is accurate and I am employed by the selected hospital. I accept the Terms of Service.',
-                            style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 13,
-                              height: 1.4,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+              const SizedBox(height: 20),
+
+              // Terms checkbox card
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: _termsAccepted
+                        ? AppColors.primary.withValues(alpha: 0.3)
+                        : AppColors.border,
                   ),
                 ),
-                const SizedBox(height: 32),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _handleRegister,
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text(
-                            'REGISTER',
-                            style: TextStyle(
-                              letterSpacing: 2,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 16,
-                            ),
-                          ),
+                child: CheckboxListTile(
+                  value: _termsAccepted,
+                  onChanged: (v) => setState(() => _termsAccepted = v ?? false),
+                  activeColor: AppColors.primary,
+                  checkColor: AppColors.background,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: const Text(
+                    'I certify all information is accurate and I am employed by the selected hospital. I accept the Terms of Service.',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                      height: 1.5,
+                    ),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-                const SizedBox(height: 40),
-              ],
-            ),
+              ),
+
+              const SizedBox(height: 28),
+
+              // Register button with gradient
+              Container(
+                width: double.infinity,
+                height: 58,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF00C6AE), Color(0xFF0EA5E9)],
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.35),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: _isLoading ? null : _handleRegister,
+                    borderRadius: BorderRadius.circular(14),
+                    child: Center(
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text(
+                              'REGISTER AS DRIVER',
+                              style: TextStyle(
+                                color: Colors.white,
+                                letterSpacing: 1.5,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15,
+                              ),
+                            ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 48),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _sectionLabel(String label) {
-    return Text(
-      label,
-      style: const TextStyle(
-        color: AppColors.primary,
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 2,
-      ),
+  Widget _sectionHeader(String label, IconData icon) {
+    return Row(
+      children: [
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: AppColors.primary, size: 14),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.primary,
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 2,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Container(
+            height: 1,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.primary.withValues(alpha: 0.4),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -318,11 +465,19 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
       padding: const EdgeInsets.only(bottom: 16),
       child: TextFormField(
         controller: controller,
-        style: const TextStyle(color: AppColors.textPrimary, fontSize: 16),
+        style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
-          prefixIcon: Icon(icon, color: AppColors.textMuted),
+          prefixIcon: Container(
+            margin: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: AppColors.primary, size: 17),
+          ),
         ),
         keyboardType: keyboard,
         textCapitalization:
@@ -333,5 +488,5 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
   }
 
   String? _required(String? v) =>
-      v == null || v.trim().isEmpty ? 'Required' : null;
+      v == null || v.trim().isEmpty ? 'This field is required' : null;
 }

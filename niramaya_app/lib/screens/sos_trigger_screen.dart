@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -156,12 +158,41 @@ class _SosTriggerScreenState extends ConsumerState<SosTriggerScreen> {
     } catch (e) {
       debugPrint('[SOS] ❌ Exception in _executeDispatch: $e');
       if (!mounted) return;
+
+      final isNetworkError = e is SocketException ||
+          e is DioException && (
+            e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.receiveTimeout ||
+            e.type == DioExceptionType.connectionError
+          );
+
       HapticFeedback.heavyImpact();
-      await _tts.speak('SOS failed. Please retry or call emergency services.');
-      setState(() {
-        _phase = 'error';
-        _errorMsg = e.toString();
-      });
+
+      if (isNetworkError) {
+        // Network down — revert to fuse so user can retry once tunnel is back
+        await _tts.speak('Connection failed. Check your network and retry.');
+        if (!mounted) return;
+        setState(() {
+          _phase = 'fuse';
+          _countdown = _countdownSeconds;
+          _errorMsg = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Connection Error: Please check if the Niramaya Engine is online.',
+            ),
+            backgroundColor: Colors.deepOrange,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      } else {
+        await _tts.speak('SOS failed. Please retry or call emergency services.');
+        setState(() {
+          _phase = 'error';
+          _errorMsg = e.toString();
+        });
+      }
     }
   }
 

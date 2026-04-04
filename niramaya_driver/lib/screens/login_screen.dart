@@ -13,22 +13,39 @@ class LoginScreen extends ConsumerStatefulWidget {
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends ConsumerState<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen>
+    with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _staffIdController = TextEditingController();
-  final _phoneController = TextEditingController();
+  final _phoneController   = TextEditingController();
   bool _isLoading = false;
+
+  late AnimationController _glowController;
+  late Animation<double>   _glowAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _glowController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat(reverse: true);
+    _glowAnimation = Tween<double>(begin: 0.25, end: 1.0).animate(
+      CurvedAnimation(parent: _glowController, curve: Curves.easeInOut),
+    );
+  }
 
   @override
   void dispose() {
     _staffIdController.dispose();
     _phoneController.dispose();
+    _glowController.dispose();
     super.dispose();
   }
 
   void _demoFill() {
     _staffIdController.text = AppConstants.demoStaffId;
-    _phoneController.text = AppConstants.demoPhone;
+    _phoneController.text   = AppConstants.demoPhone;
     setState(() {});
   }
 
@@ -71,193 +88,281 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 60),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF0D1B2E), AppColors.background, Color(0xFF050810)],
+            stops: [0.0, 0.5, 1.0],
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 56),
 
-                // Header
-                Center(
-                  child: Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      border: Border.all(
-                        color: AppColors.primary.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.local_shipping,
-                      color: AppColors.primary,
-                      size: 32,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Center(
-                  child: Text(
-                    'NIRAMAYA DRIVER',
-                    style:
-                        Theme.of(context).textTheme.headlineMedium?.copyWith(
-                              color: AppColors.primary,
-                              letterSpacing: 3,
-                              fontWeight: FontWeight.w800,
+                  // Logo + title
+                  Center(
+                    child: Column(
+                      children: [
+                        // Animated glow icon
+                        AnimatedBuilder(
+                          animation: _glowAnimation,
+                          builder: (_, __) => Container(
+                            width: 80,
+                            height: 80,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFF00C6AE), Color(0xFF0EA5E9)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.primary.withValues(
+                                      alpha: _glowAnimation.value * 0.45),
+                                  blurRadius: 28,
+                                  spreadRadius: 5,
+                                ),
+                              ],
                             ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Center(
-                  child: Text(
-                    'Sign in to your staff account',
-                    style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 48),
-
-                // Staff ID field
-                Text(
-                  'STAFF ID',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: _staffIdController,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 16,
-                  ),
-                  decoration: const InputDecoration(
-                    hintText: 'DEMO-DRV-001',
-                    prefixIcon: Icon(Icons.badge, color: AppColors.textMuted),
-                  ),
-                  textCapitalization: TextCapitalization.characters,
-                  validator: (v) =>
-                      v == null || v.trim().isEmpty ? 'Staff ID required' : null,
-                ),
-                const SizedBox(height: 24),
-
-                // Phone field
-                Text(
-                  'PHONE NUMBER',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: _phoneController,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 16,
-                  ),
-                  decoration: const InputDecoration(
-                    hintText: '+91 98765 43210',
-                    prefixIcon: Icon(Icons.phone, color: AppColors.textMuted),
-                  ),
-                  keyboardType: TextInputType.phone,
-                  validator: (v) =>
-                      v == null || v.trim().isEmpty ? 'Phone required' : null,
-                ),
-                const SizedBox(height: 16),
-
-                // Demo fill chip
-                Center(
-                  child: ActionChip(
-                    label: const Text('Demo Fill'),
-                    avatar: const Icon(
-                      Icons.auto_fix_high,
-                      size: 16,
-                      color: AppColors.primary,
-                    ),
-                    backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                    labelStyle: const TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    side: BorderSide(
-                      color: AppColors.primary.withValues(alpha: 0.3),
-                    ),
-                    onPressed: _demoFill,
-                  ),
-                ),
-                const SizedBox(height: 32),
-
-                // Continue button
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _handleLogin,
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
+                            child: const Icon(
+                              Icons.local_shipping,
                               color: Colors.white,
-                            ),
-                          )
-                        : const Text(
-                            'CONTINUE',
-                            style: TextStyle(
-                              letterSpacing: 2,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 16,
+                              size: 36,
                             ),
                           ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // Register link
-                Center(
-                  child: TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pushNamed('/register');
-                    },
-                    child: RichText(
-                      text: TextSpan(
-                        text: 'New to Niramaya? ',
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 14,
                         ),
-                        children: const [
-                          TextSpan(
-                            text: 'Register as Driver',
+                        const SizedBox(height: 20),
+
+                        // Badge chip
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: AppColors.primary.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: const Text(
+                            'STAFF PORTAL',
                             style: TextStyle(
                               color: AppColors.primary,
-                              fontWeight: FontWeight.w600,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 2,
                             ),
                           ),
-                        ],
+                        ),
+                        const SizedBox(height: 12),
+
+                        Text(
+                          'NIRAMAYA DRIVER',
+                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                color: AppColors.textPrimary,
+                                letterSpacing: 3,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Sign in to your staff account',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 48),
+
+                  // Staff ID field
+                  _fieldLabel('STAFF ID'),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _staffIdController,
+                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 16),
+                    decoration: InputDecoration(
+                      hintText: 'DEMO-DRV-001',
+                      prefixIcon: Container(
+                        margin: const EdgeInsets.all(10),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.badge, color: AppColors.primary, size: 18),
+                      ),
+                    ),
+                    textCapitalization: TextCapitalization.characters,
+                    validator: (v) =>
+                        v == null || v.trim().isEmpty ? 'Staff ID required' : null,
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Phone field
+                  _fieldLabel('PHONE NUMBER'),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _phoneController,
+                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 16),
+                    decoration: InputDecoration(
+                      hintText: '+91 98765 43210',
+                      prefixIcon: Container(
+                        margin: const EdgeInsets.all(10),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.phone, color: AppColors.primary, size: 18),
+                      ),
+                    ),
+                    keyboardType: TextInputType.phone,
+                    validator: (v) =>
+                        v == null || v.trim().isEmpty ? 'Phone required' : null,
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Demo fill chip
+                  Center(
+                    child: GestureDetector(
+                      onTap: _demoFill,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: AppColors.primary.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.auto_fix_high, size: 14, color: AppColors.primary),
+                            SizedBox(width: 8),
+                            Text(
+                              'Demo Fill',
+                              style: TextStyle(
+                                color: AppColors.primary,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 40),
-              ],
+
+                  const SizedBox(height: 32),
+
+                  // Gradient continue button
+                  Container(
+                    width: double.infinity,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF00C6AE), Color(0xFF0EA5E9)],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.35),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: _isLoading ? null : _handleLogin,
+                        borderRadius: BorderRadius.circular(14),
+                        child: Center(
+                          child: _isLoading
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text(
+                                  'CONTINUE',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    letterSpacing: 2,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Register link
+                  Center(
+                    child: TextButton(
+                      onPressed: () {
+                        Navigator.of(context).pushNamed('/register');
+                      },
+                      child: RichText(
+                        text: TextSpan(
+                          text: 'New to Niramaya? ',
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 14,
+                          ),
+                          children: const [
+                            TextSpan(
+                              text: 'Register as Driver',
+                              style: TextStyle(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 40),
+                ],
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _fieldLabel(String label) {
+    return Text(
+      label,
+      style: const TextStyle(
+        color: AppColors.textSecondary,
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 1.5,
       ),
     );
   }
