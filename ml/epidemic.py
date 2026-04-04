@@ -105,7 +105,7 @@ def detect_outbreaks(days_baseline: int = 14) -> dict:
             base_agg['baseline_daily_avg'] = base_agg['occurrence_count'] / days_baseline
             merged = pd.merge(recent_agg, base_agg[['district', group_col, 'baseline_daily_avg']], on=['district', group_col], how='left')
         else:
-            return pd.DataFrame()  # No baseline data, skip alerts
+            return pd.DataFrame()  
 
         merged['baseline_daily_avg'] = merged['baseline_daily_avg'].fillna(0.1)
 

@@ -282,7 +282,7 @@ def hospital_locations():
         df = pd.DataFrame()
 
     if df.empty:
-        # Fallback for UI Dev: Mumbai-centric dummy hospitals
+        
         hospitals = [
             {"id": "HOSP-DUM-001", "name": "Niramaya Central Mumbai", "address": "Worli, Mumbai", "lat": 19.0176, "lng": 72.8173},
             {"id": "HOSP-DUM-002", "name": "Niramaya North Heights", "address": "Borivali, Mumbai", "lat": 19.2307, "lng": 72.8567},
@@ -330,8 +330,7 @@ def symptom_trends(days: int = 14, district: str = None):
 @app.get("/gov/pharma-trends")
 def pharma_trends(days: int = 14):
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    res = supabase.table("pharmacy_sales").select("medicine_name, created_at, is_verified") \
-        .eq("is_verified", True).gte("created_at", cutoff).limit(50000).execute()
+    res = supabase.table("pharmacy_sales").select("medicine_name, created_at, is_verified")        .eq("is_verified", True).gte("created_at", cutoff).limit(50000).execute()
     df = pd.DataFrame(res.data)
     
     if df.empty:
