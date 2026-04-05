@@ -1,0 +1,17 @@
+# ML
+xgboost
+scikit-learn
+pandas
+numpy
+matplotlib
+
+# API
+fastapi
+uvicorn[standard]
+httpx
+psycopg2-binary
+pydantic
+
+# Utilities
+python-dotenv
+python-docx

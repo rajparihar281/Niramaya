@@ -1,0 +1,39 @@
+name: niramaya_driver
+description: "Niramaya-Net Ambulance Driver App"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.5.1
+  supabase_flutter: ^2.5.0
+  flutter_map: ^7.0.1
+  latlong2: ^0.9.1
+  geolocator: ^12.0.0
+  flutter_tts: ^4.0.2
+  vibration: ^2.0.1
+  shared_preferences: ^2.2.3
+  crypto: ^3.0.3
+  dio: ^5.4.3
+  intl: ^0.19.0
+  shimmer: ^3.0.0
+  google_fonts: ^6.2.1
+  flutter_foreground_task: ^6.1.1
+  niramaya_shared:
+    path: ../niramaya_shared
+  url_launcher: ^6.3.2
+  http: ^1.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/sounds/
