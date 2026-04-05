@@ -1,0 +1,250 @@
+{
+    "info": {
+        "name": "Niramaya-Net ML Engines (Edge Cases)",
+        "description": "Comprehensive tests for the Queue Optimization and Epidemic Radar ML Engines.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "Engine 1: Macro-Level Wait Time & Triage",
+            "item": [
+                {
+                    "name": "[SYSTEM] Health Check → Is ML server alive?",
+                    "request": {
+                        "method": "GET",
+                        "url": "http://localhost:8001/ml/health"
+                    }
+                },
+                {
+                    "name": "[SYSTEM] Retrain Model → Pulls fresh Supabase data & updates model",
+                    "request": {
+                        "method": "POST",
+                        "url": "http://localhost:8001/ml/retrain"
+                    }
+                },
+                {
+                    "name": "[TRIAGE] Normal → Classic Emergency (is_emergency=true) → Expect CRITICAL 10.0",
+                    "request": {
+                        "method": "POST",
+                        "url": "http://localhost:8001/calculate-priority",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"symptoms\": [\"Severe Chest Pain\", \"Shortness of Breath\"],\n  \"pain_level\": 9,\n  \"age\": 60,\n  \"temperature\": 99.0,\n  \"heart_rate\": 110,\n  \"systolic_bp\": 160,\n  \"is_emergency\": true\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "[TRIAGE] Edge Case → Silent Inversion (Trauma patient, stable vitals, emergency=false) → Expect CRITICAL",
+                    "request": {
+                        "method": "POST",
+                        "url": "http://localhost:8001/calculate-priority",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"symptoms\": [\"Massive Trauma\", \"Severe Bleeding\"],\n  \"pain_level\": 5,\n  \"age\": 30,\n  \"temperature\": 98.6,\n  \"heart_rate\": 75,\n  \"systolic_bp\": 120,\n  \"is_emergency\": false\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "[TRIAGE] Edge Case → Queue Jumper (10/10 pain, minor illness only) → Expect MODERATE, not URGENT",
+                    "request": {
+                        "method": "POST",
+                        "url": "http://localhost:8001/calculate-priority",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"symptoms\": [\"Slight Headache\", \"Stubbed Toe\"],\n  \"pain_level\": 10,\n  \"age\": 30,\n  \"temperature\": 98.6,\n  \"heart_rate\": 75,\n  \"systolic_bp\": 120,\n  \"is_emergency\": false\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "[WAIT TIME] Normal → Busy Cardiology (12 queue, 85% beds) → Expect 15-40 mins",
+                    "request": {
+                        "method": "POST",
+                        "url": "http://localhost:8001/predict",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"hospital_id\": \"HOSP-001\",\n  \"department_type\": \"Cardiology\",\n  \"department_queue_length\": 12,\n  \"patients_ahead_in_department\": 5,\n  \"avg_wait_last_hour\": 25.5,\n  \"department_bed_utilization\": 0.85\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "[TRIAGE] Edge Case → Accidental Bypass (Stroke + 185 BP, emergency=false) → Expect CRITICAL, override vitals",
+                    "request": {
+                        "method": "POST",
+                        "url": "http://localhost:8001/calculate-priority",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"symptoms\": [\"Dizziness\", \"Stroke symptoms\"],\n  \"pain_level\": 2,\n  \"age\": 65,\n  \"temperature\": 98.6,\n  \"heart_rate\": 80,\n  \"systolic_bp\": 185,\n  \"is_emergency\": false\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "[WAIT TIME] Edge Case → Cold Start (New Department, zero history) → Expect Synthetic Baseline prediction",
+                    "request": {
+                        "method": "POST",
+                        "url": "http://localhost:8001/predict",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"hospital_id\": \"HOSP-001\",\n  \"department_type\": \"Nuclear Medicine\",\n  \"department_queue_length\": 2,\n  \"patients_ahead_in_department\": 1,\n  \"avg_wait_last_hour\": 0.0,\n  \"department_bed_utilization\": 0.0\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "[WAIT TIME] Edge Case → Zero Traffic (0 queue, 0 beds used) → Expect minimum 2.0 mins, no negative",
+                    "request": {
+                        "method": "POST",
+                        "url": "http://localhost:8001/predict",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"hospital_id\": \"HOSP-001\",\n  \"department_type\": \"Cardiology\",\n  \"department_queue_length\": 0,\n  \"patients_ahead_in_department\": 0,\n  \"avg_wait_last_hour\": 0.0,\n  \"department_bed_utilization\": 0.0\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "[TRIAGE] Edge Case → Starvation (Mild headache, waited 195 mins) → Expect URGENT + starvation_escalated=true",
+                    "request": {
+                        "method": "POST",
+                        "url": "http://localhost:8001/calculate-priority",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"symptoms\": [\"Mild Headache\"],\n  \"pain_level\": 2,\n  \"age\": 45,\n  \"temperature\": 98.6,\n  \"heart_rate\": 75,\n  \"systolic_bp\": 120,\n  \"is_emergency\": false,\n  \"waiting_since_minutes\": 195\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "[TRIAGE] Edge Case → Emergency Override (Cardiac Arrest into 15 person queue) → Expect CRITICAL + override_to_front=true",
+                    "request": {
+                        "method": "POST",
+                        "url": "http://localhost:8001/calculate-priority",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"symptoms\": [\"Cardiac Arrest\"],\n  \"pain_level\": 10,\n  \"age\": 58,\n  \"temperature\": 99.0,\n  \"heart_rate\": 130,\n  \"systolic_bp\": 185,\n  \"is_emergency\": true,\n  \"current_queue_length\": 15\n}"
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Engine 4: Epidemic Radar",
+            "item": [
+                {
+                    "name": "[EPIDEMIC] Normal → Scan all districts for outbreak spikes → Expect empty list if DB clean",
+                    "request": {
+                        "method": "GET",
+                        "url": "http://localhost:8001/predict-outbreak"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Government Dashboard (Phase 2)",
+            "item": [
+                {
+                    "name": "[GOV] Symptom Trends (14 days)",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "http://localhost:8001/gov/symptom-trends?days=14",
+                            "protocol": "http",
+                            "host": ["localhost"],
+                            "port": "8001",
+                            "path": ["gov", "symptom-trends"],
+                            "query": [
+                                {
+                                    "key": "days",
+                                    "value": "14"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "[GOV] Pharma Trends (14 days)",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "http://localhost:8001/gov/pharma-trends?days=14",
+                            "protocol": "http",
+                            "host": ["localhost"],
+                            "port": "8001",
+                            "path": ["gov", "pharma-trends"],
+                            "query": [
+                                {
+                                    "key": "days",
+                                    "value": "14"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "[GOV] Bed Status (Resource Utilization)",
+                    "request": {
+                        "method": "GET",
+                        "url": "http://localhost:8001/gov/bed-status"
+                    }
+                },
+                {
+                    "name": "[GOV] Hospital Locations (Geodata for Maps)",
+                    "request": {
+                        "method": "GET",
+                        "url": "http://localhost:8001/gov/hospital-locations"
+                    }
+                }
+            ]
+        }
+    ]
+}
