@@ -46,16 +46,15 @@ export default function AuditTrail() {
 
       setEngineWaiting(false)
       setMeta(data)
-      // Decode raw eth_getLogs entries into structured records
-      const decoded = (data.events ?? []).map((log, i) => ({
-        logId: parseInt(log.logIndex ?? i, 16),
-        patientId: log.topics?.[1]
-          ? log.topics[1].replace(/^0x/, '')
-          : log.data?.slice(2, 66) ?? 'N/A',
-        hospitalId: log.address ?? '—',
-        department: '—',
-        timestamp: log.timeStamp ?? null,
-        txHash: log.transactionHash ?? null,
+      // Backend now returns pre-decoded structured events
+      const decoded = (data.events ?? []).map((ev, i) => ({
+        logId:      ev.logId ?? i,
+        patientId:  ev.patientId  || 'N/A',
+        hospitalId: ev.hospitalId || '—',
+        department: ev.department || '—',
+        timestamp:  ev.timestamp  ?? null,
+        txHash:     ev.txHash     ?? null,
+        block:      ev.block      ?? null,
       }))
       setEvents(decoded)
       setError(null)

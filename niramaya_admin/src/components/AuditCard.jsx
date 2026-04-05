@@ -5,11 +5,14 @@ export default function AuditCard({ event, index }) {
     ? new Date(Number(event.timestamp) * 1000).toLocaleString()
     : '—'
 
-  // Patient ID is always a 64-char SHA-256 hex string
   const patientHash = event.patientId ?? 'N/A'
   const shortHash = patientHash.length > 12
     ? `${patientHash.substring(0, 8)}...${patientHash.substring(patientHash.length - 8)}`
     : patientHash
+
+  const shortTx = event.txHash
+    ? `${event.txHash.substring(0, 10)}...${event.txHash.substring(event.txHash.length - 8)}`
+    : null
 
   return (
     <article className="audit-card">
@@ -35,10 +38,16 @@ export default function AuditCard({ event, index }) {
           <span className="field-label">Timestamp</span>
           <span className="field-value">{ts}</span>
         </div>
-        {event.logId !== undefined && (
+        {event.block && (
           <div className="field">
-            <span className="field-label">Log ID</span>
-            <span className="field-value mono">{event.logId.toString()}</span>
+            <span className="field-label">Block</span>
+            <span className="field-value mono">{parseInt(event.block, 16)}</span>
+          </div>
+        )}
+        {shortTx && (
+          <div className="field">
+            <span className="field-label">Tx Hash</span>
+            <code className="field-hash" title={event.txHash}>{shortTx}</code>
           </div>
         )}
       </div>

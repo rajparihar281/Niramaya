@@ -101,11 +101,41 @@ class _PatientMapScreenState extends ConsumerState<PatientMapScreen>
         _ambulanceAnimCtrl.forward(from: 0);
       }
       setState(() => _ambulancePos = loc.location);
+      // Once ambulance GPS is known, switch to live ambulance-based routing
+      // (overrides the patient-based route with the real driving path)
     });
   }
 
   Timer? _routeTimer;
-  void _fetchRoute(DispatchUpdate dispatch, LatLng? patientPos, LatLng? hospitalPos, {bool force = false}) {
+
+  // Fetch the patient→target OSRM route.
+  // Uses patientPos as origin (not ambulance) so the route is always visible
+  // regardless of whether the driver has broadcast a GPS fix yet.
+  void _fetchPatientRoute(LatLng? patientPos, LatLng? hospitalPos, bool toHospital, {bool force = false}) {
+    final from = patientPos;
+    final to = toHospital ? hospitalPos : patientPos;
+    if (from == null || to == null || from == to) return;
+    if (!force && _route.isNotEmpty) return;
+
+    _routeTimer?.cancel();
+    _routeTimer = Timer(const Duration(milliseconds: 500), () async {
+      final r = await ref.read(osrmServiceProvider).getRoute(from, to);
+      if (r != null && mounted) {
+        setState(() {
+          _route = r.polyline;
+          _etaSeconds = r.durationTotal;
+          _distanceMeters = r.distanceTotal;
+        });
+        if (!_hasInitialFit) {
+          _fitBounds([from, to]);
+          _hasInitialFit = true;
+        }
+      }
+    });
+  }
+
+  // Keep the ambulance-based route fetch for live tracking updates
+  void _fetchAmbulanceRoute(DispatchUpdate dispatch, LatLng? patientPos, LatLng? hospitalPos, {bool force = false}) {
     if (_ambulancePos == null) return;
     if (!force && _lastRoutedPos != null) {
       final d = const Distance().as(LengthUnit.Meter, _ambulancePos!, _lastRoutedPos!);
@@ -142,14 +172,18 @@ class _PatientMapScreenState extends ConsumerState<PatientMapScreen>
 
     if (newStatus == 'assigned' || newStatus == 'en_route_pickup') {
       _vibrate([0, 200, 100, 200]);
+      _route = [];
+      _fetchPatientRoute(patientPos, hospitalPos, false, force: true);
     } else if (newStatus == 'arrived') {
       _vibrate([0, 400, 100, 400]);
+      _route = [];
       _lastRoutedPos = null;
-      _fetchRoute(dispatch, patientPos, hospitalPos, force: true);
+      _fetchPatientRoute(patientPos, hospitalPos, true, force: true);
     } else if (newStatus == 'picked_up' || newStatus == 'en_route_hospital') {
       _vibrate([0, 300, 100, 300]);
+      _route = [];
       _lastRoutedPos = null;
-      _fetchRoute(dispatch, patientPos, hospitalPos, force: true);
+      _fetchPatientRoute(patientPos, hospitalPos, true, force: true);
     }
   }
 
@@ -196,23 +230,22 @@ class _PatientMapScreenState extends ConsumerState<PatientMapScreen>
               ? LatLng(dispatch.hospitalLat!, dispatch.hospitalLng!)
               : null;
 
-          // Handle status transitions — passes context for immediate re-route
+          // Handle status transitions
           _handleStatusChange(dispatch.status, dispatch, patientPos, hospitalPos);
 
-          // Always attempt route fetch; force=true on first ambulance fix
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _fetchRoute(dispatch, patientPos, hospitalPos,
-                force: _ambulancePos != null && !_hasInitialFit);
-          });
-
-          _fetchRoute(dispatch, patientPos, hospitalPos);
-
-          // Route color: teal for pickup, green for hospital
+          // Route phase — declared here so postFrameCallback and polylines share it
           final toHospital = ['arrived', 'picked_up', 'en_route_hospital']
               .contains(dispatch.status);
-          final routeColor = toHospital
-              ? AppColors.hospitalGreen
-              : AppColors.primary;
+          final routeColor = toHospital ? AppColors.hospitalGreen : AppColors.primary;
+
+          // Always fetch patient→hospital route immediately on first load
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!_hasInitialFit && patientPos != null && hospitalPos != null) {
+              _fitBounds([patientPos, hospitalPos]);
+            }
+            _fetchPatientRoute(patientPos, hospitalPos, toHospital);
+            _fetchAmbulanceRoute(dispatch, patientPos, hospitalPos);
+          });
 
           return Stack(
             children: [
@@ -230,24 +263,33 @@ class _PatientMapScreenState extends ConsumerState<PatientMapScreen>
                     userAgentPackageName: 'com.niramaya.app',
                     maxNativeZoom: 19,
                   ),
-                  if (_route.isNotEmpty)
-                    PolylineLayer(
-                      polylines: [
-                        // Shadow
-                        Polyline(
-                          points: _route,
-                          color: routeColor.withValues(alpha: 0.2),
-                          strokeWidth: 8,
-                        ),
-                        // Main route
-                        Polyline(
-                          points: _route,
-                          color: routeColor,
-                          strokeWidth: 4.5,
-                        ),
-                      ],
-                    ),
-                  MarkerLayer(markers: _buildMarkers(patientPos, hospitalPos)),
+                  PolylineLayer(polylines: [
+                    // OSRM route shadow
+                    if (_route.isNotEmpty)
+                      Polyline(
+                        points: _route,
+                        color: routeColor.withValues(alpha: 0.2),
+                        strokeWidth: 9,
+                      ),
+                    // OSRM route main line
+                    if (_route.isNotEmpty)
+                      Polyline(
+                        points: _route,
+                        color: routeColor,
+                        strokeWidth: 4.5,
+                        borderColor: Colors.white.withValues(alpha: 0.6),
+                        borderStrokeWidth: 1.5,
+                      ),
+                    // Straight-line fallback only while OSRM is loading
+                    if (_route.isEmpty && patientPos != null && hospitalPos != null)
+                      Polyline(
+                        points: [patientPos, hospitalPos],
+                        color: routeColor.withValues(alpha: 0.35),
+                        strokeWidth: 3,
+                        pattern: StrokePattern.dashed(segments: [10, 6]),
+                      ),
+                  ]),
+                  MarkerLayer(markers: _buildMarkers(patientPos, hospitalPos, toHospital)),
                 ],
               ),
 
@@ -336,9 +378,10 @@ class _PatientMapScreenState extends ConsumerState<PatientMapScreen>
     );
   }
 
-  List<Marker> _buildMarkers(LatLng? patientPos, LatLng? hospitalPos) {
+  List<Marker> _buildMarkers(LatLng? patientPos, LatLng? hospitalPos, bool toHospital) {
     final markers = <Marker>[];
 
+    // User's live location — small blue dot
     if (_userLocation != null) {
       markers.add(Marker(
         point: _userLocation!,
@@ -354,10 +397,11 @@ class _PatientMapScreenState extends ConsumerState<PatientMapScreen>
       ));
     }
 
-    if (patientPos != null) {
+    // Patient SOS pin — pulsing red, only during pickup phase
+    if (!toHospital && patientPos != null) {
       markers.add(Marker(
         point: patientPos,
-        width: 44, height: 44,
+        width: 48, height: 48,
         child: ScaleTransition(
           scale: Tween(begin: 0.9, end: 1.15).animate(
             CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
@@ -369,34 +413,40 @@ class _PatientMapScreenState extends ConsumerState<PatientMapScreen>
               border: Border.all(color: Colors.white, width: 2.5),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.emergencyRed.withValues(alpha: 0.4),
-                  blurRadius: 10,
-                  spreadRadius: 2,
+                  color: AppColors.emergencyRed.withValues(alpha: 0.45),
+                  blurRadius: 12, spreadRadius: 3,
                 ),
               ],
             ),
-            child: const Icon(Icons.person_pin, color: Colors.white, size: 22),
+            child: const Icon(Icons.person_pin, color: Colors.white, size: 24),
           ),
         ),
       ));
     }
 
+    // Hospital — always visible, rounded square green
     if (hospitalPos != null) {
       markers.add(Marker(
         point: hospitalPos,
-        width: 44, height: 44,
+        width: 52, height: 52,
         child: Container(
           decoration: BoxDecoration(
             color: AppColors.hospitalGreen,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.white, width: 2),
-            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6)],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white, width: 2.5),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.hospitalGreen.withValues(alpha: 0.45),
+                blurRadius: 12, spreadRadius: 2,
+              ),
+            ],
           ),
-          child: const Icon(Icons.local_hospital, color: Colors.white, size: 22),
+          child: const Icon(Icons.local_hospital, color: Colors.white, size: 26),
         ),
       ));
     }
 
+    // Ambulance — animated, rotates with bearing
     if (_ambulancePos != null) {
       LatLng renderPos = _ambulancePos!;
       if (_oldAmbulancePos != null && _ambulanceAnimCtrl.isAnimating) {
@@ -409,18 +459,17 @@ class _PatientMapScreenState extends ConsumerState<PatientMapScreen>
           angle: _ambulanceBearing * math.pi / 180,
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: AppColors.driverBlue,
               shape: BoxShape.circle,
-              border: Border.all(color: AppColors.primary, width: 3),
+              border: Border.all(color: Colors.white, width: 3),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.3),
-                  blurRadius: 10,
-                  spreadRadius: 2,
+                  color: AppColors.driverBlue.withValues(alpha: 0.4),
+                  blurRadius: 12, spreadRadius: 2,
                 ),
               ],
             ),
-            child: const Icon(Icons.local_shipping, color: AppColors.primary, size: 26),
+            child: const Icon(Icons.airport_shuttle, color: Colors.white, size: 26),
           ),
         ),
       ));

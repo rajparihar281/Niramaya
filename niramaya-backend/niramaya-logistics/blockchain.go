@@ -18,8 +18,8 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-// emergencyAuditABI matches EmergencyAudit.sol → logDispatch(string,string,string)
-const emergencyAuditABI = `[{"inputs":[{"internalType":"string","name":"_pId","type":"string"},{"internalType":"string","name":"_hId","type":"string"},{"internalType":"string","name":"_dept","type":"string"}],"name":"logDispatch","outputs":[],"stateMutability":"nonpayable","type":"function"}]`
+// emergencyAuditABI matches EmergencyAudit.sol — logDispatch function + DispatchLogged event
+const emergencyAuditABI = `[{"inputs":[{"internalType":"string","name":"_pId","type":"string"},{"internalType":"string","name":"_hId","type":"string"},{"internalType":"string","name":"_dept","type":"string"}],"name":"logDispatch","outputs":[],"stateMutability":"nonpayable","type":"function"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"logId","type":"uint256"},{"indexed":false,"internalType":"string","name":"patientId","type":"string"},{"indexed":false,"internalType":"string","name":"hospitalId","type":"string"},{"indexed":false,"internalType":"string","name":"department","type":"string"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],"name":"DispatchLogged","type":"event"}]`
 
 // logDispatchOnChain sends a logDispatch tx and blocks until it is mined.
 // Returns the tx hash string, or an error. Non-fatal: caller logs and continues.

@@ -49,12 +49,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const Spacer(flex: 2),
-            FadeTransition(
+      body: Stack(
+        children: [
+          // Centered Logo and Title
+          Center(
+            child: FadeTransition(
               opacity: _fade,
               child: ScaleTransition(
                 scale: _scale,
@@ -108,30 +107,41 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                 ),
               ),
             ),
-            const Spacer(flex: 2),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 40),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppColors.primary.withValues(alpha: 0.6),
+          ),
+          // Bottom Loading Indicator and text
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 40),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: AppColors.primary.withValues(alpha: 0.8),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Powered by ABDM · Govt. of India',
-                    style: TextStyle(fontSize: 11, color: AppColors.textMuted, letterSpacing: 0.5),
-                  ),
-                ],
+                    const SizedBox(height: 20),
+                    Text(
+                      'Powered by ABDM · Govt. of India',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                        letterSpacing: 0.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -3,20 +3,29 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math"
+	"math/big"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"niramaya-logistics/security"
 )
+
+// hexDecode decodes a hex string (without 0x prefix) into bytes.
+func hexDecode(s string) ([]byte, error) {
+	return hex.DecodeString(s)
+}
 
 type DispatchRequest struct {
 	PatientID    string  `json:"patient_id"`
@@ -383,11 +392,58 @@ func handleAuditTrail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Decode ABI-encoded log.data for each event into structured fields.
+	// DispatchLogged(uint256 indexed logId, string patientId, string hospitalId, string department, uint256 timestamp)
+	// Non-indexed params (patientId, hospitalId, department, timestamp) are ABI-encoded in data.
+	parsedABI, abiErr := abi.JSON(strings.NewReader(emergencyAuditABI))
+
+	type auditEvent struct {
+		LogID      string `json:"logId"`
+		PatientID  string `json:"patientId"`
+		HospitalID string `json:"hospitalId"`
+		Department string `json:"department"`
+		Timestamp  int64  `json:"timestamp"`
+		TxHash     string `json:"txHash"`
+		Block      string `json:"block"`
+	}
+
+	events := make([]auditEvent, 0, len(rpcRes.Result))
+	for _, raw := range rpcRes.Result {
+		ev := auditEvent{
+			TxHash: fmt.Sprintf("%v", raw["transactionHash"]),
+			Block:  fmt.Sprintf("%v", raw["blockNumber"]),
+		}
+
+		// topics[1] = indexed logId (bytes32-padded uint256)
+		if topics, ok := raw["topics"].([]interface{}); ok && len(topics) > 1 {
+			ev.LogID = fmt.Sprintf("%v", topics[1])
+		}
+
+		// Decode non-indexed fields from data
+		if abiErr == nil {
+			dataHex, _ := raw["data"].(string)
+			dataHex = strings.TrimPrefix(dataHex, "0x")
+			if decoded, hexErr := hexDecode(dataHex); hexErr == nil {
+				eventABI := parsedABI.Events["DispatchLogged"]
+				vals, unpackErr := eventABI.Inputs.NonIndexed().Unpack(decoded)
+				if unpackErr == nil && len(vals) >= 4 {
+					ev.PatientID, _ = vals[0].(string)
+					ev.HospitalID, _ = vals[1].(string)
+					ev.Department, _ = vals[2].(string)
+					if ts, ok := vals[3].(*big.Int); ok {
+						ev.Timestamp = ts.Int64()
+					}
+				}
+			}
+		}
+		events = append(events, ev)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":           "connected",
 		"rpc":              rpcURL,
 		"contract_address": contractAddr,
-		"events":           rpcRes.Result,
+		"events":           events,
 	})
 }
 
