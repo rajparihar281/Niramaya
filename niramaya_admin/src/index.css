@@ -1,0 +1,67 @@
+/* ─────────────────────────────────────────────────────────────
+   Niramaya Admin Portal — Global Styles
+   Design: Dark glass-morphic command center aesthetic
+───────────────────────────────────────────────────────────── */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg-base: #050a12;
+  --bg-glass: rgba(255, 255, 255, 0.04);
+  --bg-card: rgba(255, 255, 255, 0.06);
+  --bg-hover: rgba(255, 255, 255, 0.09);
+
+  --accent-red: #d32f2f;
+  --accent-red-glow: rgba(211, 47, 47, 0.25);
+  --accent-green: #00e676;
+  --accent-amber: #ffab40;
+  --accent-blue: #40c4ff;
+
+  --text-primary: #e8eaf6;
+  --text-secondary: rgba(232, 234, 246, 0.55);
+  --text-mono: #80cbc4;
+
+  --border: rgba(255, 255, 255, 0.08);
+  --border-accent: rgba(211, 47, 47, 0.4);
+
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+
+  --shadow-card: 0 4px 32px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 24px var(--accent-red-glow);
+}
+
+html, body, #root {
+  height: 100%;
+  font-family: var(--font-sans);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+
+/* Animated starfield background */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 20% 20%, rgba(211,47,47,0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, rgba(64,196,255,0.05) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+#root { position: relative; z-index: 1; }

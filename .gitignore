@@ -42,3 +42,82 @@ strip_comments.py
 simulate_new_data.py
 check_db.py
 ml/test_api.py
+# ── NIRAMAYA SECRETS & CONFIG ──────────────────
+**/AppConstants.dart
+**/constants.dart
+**/.env
+**/*.env
+**/dev.ps1
+**/local.properties
+**/secrets.json
+**/test.json
+**/config.toml
+
+# ── FLUTTER (Patient App & Driver App) ────────────────────
+# Common Flutter/Dart build and tool folders
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+
+# Android-specific within Flutter
+**/android/.gradle/
+**/android/app/build/
+**/android/local.properties
+**/android/app/src/main/res/xml/network_security_config.xml
+**/*.keystore
+**/*.jks
+
+# iOS-specific within Flutter
+**/ios/Pods/
+**/ios/.generated/
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+
+# ── GO BACKEND (Logistics Engine) ─────────────────────────
+# Binaries and logs
+**/niramaya-logistics/bin/
+**/niramaya-logistics/niramaya-engine
+**/*.exe
+**/*.exe~
+**/*.dll
+**/*.so
+**/*.dylib
+**/vendor/
+
+# ── SMART CONTRACTS (Hardhat/Solidity) ────────────────────
+**/niramaya-contracts/node_modules/
+**/niramaya-contracts/artifacts/
+**/niramaya-contracts/cache/
+**/niramaya-contracts/typechain/
+**/niramaya-contracts/typechain-types/
+**/niramaya-contracts/coverage/
+**/niramaya-contracts/coverage.json
+
+# ── REACT ADMIN (Vite/React) ──────────────────────────────
+**/niramaya_admin/node_modules/
+**/niramaya_admin/dist/
+**/niramaya_admin/.eslintcache
+
+# ── SUPABASE ──────────────────────────────────────────────
+**/supabase/.temp/
+**/supabase/.branches/
+
+# ── IDE & SYSTEM ──────────────────────────────────────────
+# JetBrains (Android Studio / IntelliJ)
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# System Files
+.DS_Store
+Thumbs.db
+desktop.ini
+nirmaya_modelpredrun/

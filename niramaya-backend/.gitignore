@@ -1,0 +1,64 @@
+# --- Go (Binaries and Tooling) ---
+# Compiled binaries
+bin/
+out/
+dist/
+# Main executable (if you name it specifically)
+main
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Dependencies
+# Keep go.sum and go.mod, but ignore the vendor folder 
+# (unless you explicitly want to version your dependencies)
+node_modules/
+vendor/
+
+# --- Environment & Secrets (CRITICAL) ---
+# Never commit these!
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets.json
+dev.ps1
+
+# --- Blockchain (Hardhat / Ethereum) ---
+# Compiled smart contract artifacts
+artifacts/
+cache/
+typechain/
+typechain-types/
+
+# Local Hardhat network state
+deployments/
+nodes/
+
+# --- Database / Supabase ---
+# Local database data
+.supabase/
+supabase/.temp/
+postgres-data/
+
+# --- IDEs & System ---
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# JetBrains (GoLand)
+.idea/
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
+logs/
